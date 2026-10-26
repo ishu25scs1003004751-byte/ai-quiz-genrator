@@ -1349,24 +1349,74 @@ if st.session_state.stage == "setup":
                     except Exception as e:
                         st.error(friendly_error(e))
 
-    with tab_pyq:
-        # ── TAB 2: GOVT EXAM PYQ PRACTICE SECTION ──
-        st.markdown("### 🏛️ Previous Year Questions (PYQs) Practice")
-        st.caption("Target Exam choose karke real previous year papers ke authentic questions solve karein.")
+   with tab_pyq:
+        # ── TAB 2: EXAM & SUBJECT PYQ PRACTICE SECTION (AUTO MARKING & SUBJECT FILTER) ──
+        st.markdown("### 🏛️ Govt & Entrance Exam PYQs")
+        st.caption("Exam aur Subject Select karein — Official negative marking rules automatic apply ho jayenge.")
 
         with st.container(key="panel_pyq"):
-            target_exam = st.selectbox("Target Exam Select Karein:", ["SSC CGL", "RRB NTPC", "Banking (IBPS/SBI)", "UP Police Constable", "UPSC / State PCS", "General All Exams"])
+            target_exam = st.selectbox("Target Exam Select Karein:", [
+                "SSC CGL", 
+                "RRB NTPC", 
+                "Banking (IBPS/SBI)", 
+                "UP Police Constable", 
+                "JEE (Main/Advanced)",
+                "NEET UG",
+                "UP CNET (B.Sc Nursing Entrance)",
+                "AKTU Semester Exams (B.Tech)",
+                "UPSC / State PCS", 
+                "General All Exams"
+            ])
+            
+            # Subject Mapping according to Exams
+            EXAM_SUBJECTS = {
+                "SSC CGL": ["All Subjects Mixed", "General Awareness", "Quantitative Aptitude", "Reasoning", "English Comprehension"],
+                "RRB NTPC": ["All Subjects Mixed", "General Awareness", "Mathematics", "General Intelligence & Reasoning"],
+                "Banking (IBPS/SBI)": ["All Subjects Mixed", "Reasoning Ability", "Quantitative Aptitude", "English Language", "General/Banking Awareness"],
+                "UP Police Constable": ["All Subjects Mixed", "General Knowledge", "General Hindi", "Numerical & Mental Ability", "Mental Aptitude/Reasoning"],
+                "JEE (Main/Advanced)": ["All Subjects Mixed", "Physics", "Chemistry", "Mathematics"],
+                "NEET UG": ["All Subjects Mixed", "Physics", "Chemistry", "Botany", "Zoology"],
+                "UP CNET (B.Sc Nursing Entrance)": ["All Subjects Mixed", "Nursing Aptitude", "Physics", "Chemistry", "Biology", "English & General Knowledge"],
+                "AKTU Semester Exams (B.Tech)": ["All Subjects Mixed", "Artificial Intelligence & ML", "Data Structures & C++", "Operating Systems", "Engineering Mathematics", "Computer Networks", "DBMS"],
+                "UPSC / State PCS": ["All Subjects Mixed", "Indian Polity & Constitution", "History & Culture", "Geography", "Indian Economy", "Environment & Ecology", "General Science"],
+                "General All Exams": ["All Subjects Mixed", "General Knowledge", "Mathematics", "Reasoning", "Science"]
+            }
+            
+            subjects_list = EXAM_SUBJECTS.get(target_exam, ["All Subjects Mixed"])
+            target_subject = st.selectbox("Subject / Unit Choose Karein:", subjects_list)
+
+            # Official Marking Rules Definition
+            EXAM_MARKING = {
+                "SSC CGL": {"marks": 2.0, "neg": 0.25, "info": "+2.0 Sahi | −0.50 Galat (¼ Penalty)"},
+                "RRB NTPC": {"marks": 1.0, "neg": 0.333, "info": "+1.0 Sahi | −0.33 Galat (⅓ Penalty)"},
+                "Banking (IBPS/SBI)": {"marks": 1.0, "neg": 0.25, "info": "+1.0 Sahi | −0.25 Galat (¼ Penalty)"},
+                "UP Police Constable": {"marks": 2.0, "neg": 0.25, "info": "+2.0 Sahi | −0.50 Galat (¼ Penalty)"},
+                "JEE (Main/Advanced)": {"marks": 4.0, "neg": 0.25, "info": "+4.0 Sahi | −1.00 Galat (¼ Penalty)"},
+                "NEET UG": {"marks": 4.0, "neg": 0.25, "info": "+4.0 Sahi | −1.00 Galat (¼ Penalty)"},
+                "UP CNET (B.Sc Nursing Entrance)": {"marks": 1.0, "neg": 0.0, "info": "+1.0 Sahi | No Negative Marking"},
+                "AKTU Semester Exams (B.Tech)": {"marks": 2.0, "neg": 0.0, "info": "+2.0 Sahi | No Negative Marking"},
+                "UPSC / State PCS": {"marks": 2.0, "neg": 0.333, "info": "+2.0 Sahi | −0.66 Galat (⅓ Penalty)"},
+                "General All Exams": {"marks": 1.0, "neg": 0.25, "info": "+1.0 Sahi | −0.25 Galat (¼ Penalty)"}
+            }
+            
+            current_rule = EXAM_MARKING.get(target_exam, EXAM_MARKING["General All Exams"])
+            st.info(f"⚖️ **Official Exam Marking:** {current_rule['info']}")
+
             pyq_dataset = load_pyq_dataset()
-            filtered_pyqs = [q for q in pyq_dataset if q.get("exam") == target_exam]
+            # Filter by Exam and Subject (if selected)
+            filtered_pyqs = [
+                q for q in pyq_dataset 
+                if q.get("exam") == target_exam and (target_subject == "All Subjects Mixed" or q.get("subject") == target_subject)
+            ]
 
             if filtered_pyqs:
-                st.success(f"✅ {len(filtered_pyqs)} Genuine PYQs found in Local Database for {target_exam}!")
+                st.success(f"✅ {len(filtered_pyqs)} Genuine PYQs found in Database for {target_exam} ({target_subject})!")
             else:
-                st.info(f"ℹ️ Local database contains AI-generated standard PYQs for {target_exam}.")
+                st.caption(f"ℹ️ Local database contains AI-generated standard PYQs for {target_exam} - {target_subject}.")
 
         st.write("")
-        if st.button(f"🚀 Start {target_exam} PYQ Practice", type="primary", use_container_width=True, key="btn_start_pyq"):
-            with st.spinner(f"Preparing {target_exam} PYQs..."):
+        if st.button(f"🚀 Start {target_exam} ({target_subject}) Practice", type="primary", use_container_width=True, key="btn_start_pyq"):
+            with st.spinner(f"Preparing {target_exam} - {target_subject} Questions..."):
                 selected_quiz = []
                 if filtered_pyqs:
                     raw_items = random.sample(filtered_pyqs, min(num_questions, len(filtered_pyqs)))
@@ -1380,19 +1430,29 @@ if st.session_state.stage == "setup":
                             "answer": item["answer"],
                             "explanation": item.get("explanation", ""),
                             "hint": f"Asked in {item.get('year', 'Real Exam')}",
-                            "topic": f"{item.get('exam')} {item.get('year', '')}",
+                            "topic": f"{item.get('exam')} ({item.get('subject', target_subject)})",
                             "level": 2
                         })
                 else:
-                    pyq_prompt = f"Generate {num_questions} authentic past year exam questions (PYQs) strictly based on real exam patterns for: {target_exam}. Language: {language}."
+                    subj_filter = "" if target_subject == "All Subjects Mixed" else f" specifically for the subject '{target_subject}'"
+                    pyq_prompt = f"Generate {num_questions} authentic past year exam questions (PYQs){subj_filter} strictly based on real exam patterns for: {target_exam}. Language: {language}."
                     selected_quiz = generate_with_progress(pyq_prompt, num_questions, difficulty, type_keys, language, model, adaptive=adaptive)
 
                 if selected_quiz:
+                    # Automatic Apply Official Exam Marking Scheme
                     start_quiz(selected_quiz, {
-                        "label": f"{target_exam} PYQ Practice",
-                        "difficulty": difficulty, "mode": mode, "source": target_exam,
-                        "types": type_keys, "adaptive": adaptive, "language": language, "model": model,
-                        "time_limit": time_limit, "quiz_limit": quiz_limit, "marks": marks_correct, "neg": neg_frac
+                        "label": f"{target_exam} - {target_subject} PYQ Practice",
+                        "difficulty": difficulty, 
+                        "mode": mode, 
+                        "source": f"{target_exam} ({target_subject})",
+                        "types": type_keys, 
+                        "adaptive": adaptive, 
+                        "language": language, 
+                        "model": model,
+                        "time_limit": time_limit, 
+                        "quiz_limit": quiz_limit, 
+                        "marks": current_rule["marks"], 
+                        "neg": current_rule["neg"]
                     })
                     st.rerun()
 
