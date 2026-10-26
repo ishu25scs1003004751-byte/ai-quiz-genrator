@@ -1,3 +1,4 @@
-streamlit
-google-genai
+streamlit>=1.37
 pypdf
+google-genai
+pandas
