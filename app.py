@@ -15,6 +15,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pypdf import PdfReader
 from groq import Groq
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND)
