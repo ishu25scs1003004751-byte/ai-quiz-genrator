@@ -1233,6 +1233,7 @@ st.markdown(
 # ═════════════════════════════════════════════════════════════
 # STAGE · SETUP
 # ═════════════════════════════════════════════════════════════
+
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
@@ -1246,12 +1247,12 @@ if st.session_state.stage == "setup":
         unsafe_allow_html=True,
     )
 
-    # 🌟 NAYA FEATURE: DUAL TABS (Quiz Arena + Doubt Solver & Theory)
+    # DUAL TABS (Quiz Arena + Doubt Solver & Theory)
     tab_quiz, tab_doubt = st.tabs(["🧠 Quiz Arena", "🔍 Doubt Solver & Theory"])
 
     with tab_quiz:
         with st.container(key="srcpick"):
-            source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo", "📝 Notes"], horizontal=True)
+            source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo / Camera", "📝 Notes"], horizontal=True)
 
         input_text, label, media = "", "", None
 
@@ -1290,16 +1291,23 @@ if st.session_state.stage == "setup":
                         st.error(f"PDF read nahi ho paya: {e}")
 
             elif source.startswith("🖼️"):
-                st.caption("Notes / book page ki photo (PNG, JPG, WEBP, max 3 MB). AI ise seedha dekhkar padhega — handwriting bhi.")
-                mf = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="media_up")
+                st.caption("Photo upload karein ya direct camera se click karein.")
+                photo_mode = st.radio("Photo Mode Select Karein:", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="quiz_photo_mode")
+                
+                mf = None
+                if photo_mode == "📁 Upload File":
+                    mf = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="media_up")
+                else:
+                    mf = st.camera_input("Live Photo Click Karein", key="quiz_cam")
+
                 if mf is not None:
                     data = mf.getvalue()
                     if len(data) > MAX_IMG_BYTES:
                         st.error("Photo 3 MB se badi hai. Chhoti ya compress ki hui photo use karo.")
                     else:
-                        st.image(data, caption=mf.name, use_container_width=True)
-                        media = {"bytes": data, "mime": mf.type or "image/jpeg"}
-                        input_text, label = "(attached image)", f"Photo: {mf.name}"
+                        st.image(data, caption="Selected Photo", use_container_width=True)
+                        media = {"bytes": data, "mime": getattr(mf, "type", "image/jpeg") or "image/jpeg"}
+                        input_text, label = "(attached image)", f"Photo: {getattr(mf, 'name', 'Camera Picture')}"
 
             else:
                 pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
@@ -1310,7 +1318,7 @@ if st.session_state.stage == "setup":
         st.write("")
         if st.button("✨ Quiz banao", type="primary", use_container_width=True):
             if not input_text.strip():
-                st.warning("Pehle topic likho, photo upload karo ya notes paste karo.")
+                st.warning("Pehle topic likho, photo upload/click karo ya notes paste karo.")
             else:
                 with st.spinner("AI sawal bana raha hai…"):
                     try:
@@ -1334,9 +1342,9 @@ if st.session_state.stage == "setup":
                         st.error(friendly_error(e))
 
     with tab_doubt:
-        # ── TAB 2: DOUBT SOLVER & THEORY FEATURE ──
+        # DOUBT SOLVER & THEORY FEATURE
         st.markdown("### 🔍 AI Doubt Solver & Concept Explainer")
-        st.caption("Kisi question ki photo upload karo, text query type karo ya PDF/notes bhejkar detailed theory & step-by-step solution pao.")
+        st.caption("Question ki photo upload/click karein, text query write karein ya PDF bhejkar detailed theory & step-by-step solution pao.")
 
         with st.container(key="panel_doubt"):
             doubt_source = st.radio("Query type", ["📝 Question / Text", "🖼️ Photo / Screenshot", "📄 PDF Document"], horizontal=True, key="d_src")
@@ -1347,12 +1355,19 @@ if st.session_state.stage == "setup":
             if doubt_source.startswith("📝"):
                 q_text = st.text_area("Apna doubt / query yahan type karein:", height=150, placeholder="e.g. Explain Binary Search Tree insertion with an example...", key="d_txt")
             elif doubt_source.startswith("🖼️"):
-                st.caption("Book page ya question ki photo upload karein (Handwritten / Printed both work).")
-                d_file = st.file_uploader("Photo upload karein", type=["png", "jpg", "jpeg", "webp"], key="d_img")
+                st.caption("Book page ya question ki photo upload karein ya live photo lein.")
+                d_photo_mode = st.radio("Photo Source:", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="doubt_photo_mode")
+                
+                d_file = None
+                if d_photo_mode == "📁 Upload File":
+                    d_file = st.file_uploader("Photo upload karein", type=["png", "jpg", "jpeg", "webp"], key="d_img")
+                else:
+                    d_file = st.camera_input("Question ki Live Photo Click Karein", key="d_cam")
+
                 if d_file:
                     data = d_file.getvalue()
-                    st.image(data, caption=d_file.name, use_container_width=True)
-                    d_media = {"bytes": data, "mime": d_file.type or "image/jpeg"}
+                    st.image(data, caption="Question Photo", use_container_width=True)
+                    d_media = {"bytes": data, "mime": getattr(d_file, "type", "image/jpeg") or "image/jpeg"}
                     q_text = st.text_input("Koi extra instruction? (Optional)", placeholder="e.g. Step-by-step solution and key formulas", key="d_img_txt")
             else:
                 d_pdf = st.file_uploader("PDF upload karein", type=["pdf"], key="d_pdf")
@@ -1366,7 +1381,7 @@ if st.session_state.stage == "setup":
         st.write("")
         if st.button("💡 Solution & Theory Samjhao", type="primary", use_container_width=True, key="btn_solve_doubt"):
             if not q_text.strip() and not d_media:
-                st.warning("Pehle doubt type karein ya photo upload karein.")
+                st.warning("Pehle doubt type karein ya photo upload/click karein.")
             else:
                 with st.spinner("AI Doubt solve aur Theory generate kar raha hai..."):
                     try:
