@@ -7,6 +7,7 @@ import base64
 import random
 import difflib
 import html
+import sqlite3
 from datetime import datetime
 
 import pandas as pd
@@ -26,6 +27,78 @@ st.set_page_config(
 )
 
 LIGHT = bool(st.session_state.get("light", False))
+
+# ─────────────────────────────────────────────────────────────
+# DATABASE LAYER (SQLite local persistence for Users & History)
+# ─────────────────────────────────────────────────────────────
+DB_FILE = "quizforge.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # Users table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT UNIQUE,
+                    xp INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )''')
+    # History table
+    c.execute('''CREATE TABLE IF NOT EXISTS history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    topic TEXT,
+                    difficulty TEXT,
+                    marks REAL,
+                    max_marks REAL,
+                    accuracy REAL,
+                    pct REAL,
+                    timestamp TEXT
+                )''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_user_data(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT xp FROM users WHERE user_id=?", (user_id,))
+    user = c.fetchone()
+    if not user:
+        c.execute("INSERT INTO users (user_id, xp) VALUES (?, ?)", (user_id, 0))
+        conn.commit()
+        xp = 0
+    else:
+        xp = user[0]
+    
+    c.execute("SELECT topic, difficulty, marks, max_marks, accuracy, pct, timestamp FROM history WHERE user_id=? ORDER BY id ASC", (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    
+    history = [
+        {
+            "topic": r[0], "difficulty": r[1], "marks": r[2], "max": r[3],
+            "acc": r[4], "pct": r[5], "time": r[6]
+        } for r in rows
+    ]
+    return xp, history
+
+def save_quiz_result_db(user_id, topic, diff, marks, max_m, acc, pct, time_str, added_xp):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET xp = xp + ? WHERE user_id=?", (added_xp, user_id))
+    c.execute('''INSERT INTO history (user_id, topic, difficulty, marks, max_marks, accuracy, pct, timestamp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (user_id, topic, diff, marks, max_m, acc, pct, time_str))
+    conn.commit()
+    conn.close()
+
+def clear_user_history_db(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM history WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
 
 # ─────────────────────────────────────────────────────────────
 # STYLING — midnight ink, violet→cyan energy, amber highlights
@@ -94,7 +167,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
 .qf-step.done{ color:var(--good); border-color:rgba(52,211,153,.5); }
 
 /* Glass panels */
-.st-key-panel, .st-key-optbox, .st-key-morebox{
+.st-key-panel, .st-key-optbox, .st-key-morebox, .auth-box{
   background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px 22px; backdrop-filter:blur(6px);
 }
 .st-key-optbox{ padding:14px 16px; counter-reset:opt; }
@@ -113,7 +186,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
   transition:border-color .12s, background .12s, transform .08s;
 }
 .st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{
-  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:9px;
+  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:99px;
   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.85rem;
   background:rgba(124,92,255,.22); color:var(--txt); border:1px solid var(--line);
 }
@@ -245,11 +318,9 @@ if not api_key:
     st.error("API key nahi mili. Streamlit Cloud ke **Secrets** me `GROQ_API_KEY` add karein.")
     st.stop()
 
-
 @st.cache_resource
 def get_client(key: str):
     return Groq(api_key=key)
-
 
 client = get_client(api_key)
 
@@ -257,7 +328,7 @@ MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_CHARS = 24000
 MAX_IMG_BYTES = 3 * 1024 * 1024
-MAX_TOTAL_Q = 200  # cap for one quiz, including 'aur sawal' extensions
+MAX_TOTAL_Q = 200
 XP_BASE = {1: 10, 2: 15, 3: 20}
 LEVEL_NAME = {1: "Easy", 2: "Medium", 3: "Hard"}
 DIFF_LEVEL = {"Easy": 1, "Medium": 2, "Hard": 3}
@@ -295,8 +366,8 @@ def fresh_run_state():
         "start_time": None, "end_time": None,
     }
 
-
 GLOBAL_DEFAULTS = {
+    "user_authenticated": False, "user_id": None, "otp_sent": False, "gen_otp": None,
     "stage": "setup", "quiz_id": 0, "history": [], "meta": {}, "total_xp": 0, "bookmarks": {}, "deep": {},
     "flash_cards": [], "flash_i": 0, "flash_show": False, "flash_return": "setup",
     "q_key": None, "q_start": time.time(), "_picked": "",
@@ -305,22 +376,24 @@ for _k, _v in {**GLOBAL_DEFAULTS, **fresh_run_state()}.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
+# Load user database data when authenticated
+if st.session_state.user_authenticated and st.session_state.user_id:
+    xp, hist = get_user_data(st.session_state.user_id)
+    st.session_state.total_xp = xp
+    st.session_state.history = hist
 
 # ─────────────────────────────────────────────────────────────
-# GENERAL HELPERS
+# GENERAL HELPERS & LLM
 # ─────────────────────────────────────────────────────────────
 def esc(s) -> str:
     return html.escape(str(s))
-
 
 def fmt_time(seconds):
     seconds = int(seconds)
     return f"{seconds // 60}m {seconds % 60:02d}s"
 
-
 def level_of(xp):
     return xp // 100 + 1
-
 
 def friendly_error(e: Exception) -> str:
     msg = str(e)
@@ -333,7 +406,6 @@ def friendly_error(e: Exception) -> str:
         return "Ye model abhi available nahi hai. Sidebar → Advanced me doosra model chuno."
     return f"Error: {msg}"
 
-
 def llm(messages, model, json_mode=False, temperature=0.6):
     kwargs = dict(model=model, messages=messages, temperature=temperature)
     if json_mode:
@@ -342,7 +414,6 @@ def llm(messages, model, json_mode=False, temperature=0.6):
         kwargs["extra_body"] = {"reasoning_effort": "low"}
     r = client.chat.completions.create(**kwargs)
     return r.choices[0].message.content or ""
-
 
 def clean_json(raw: str):
     raw = (raw or "").strip()
@@ -359,14 +430,12 @@ def clean_json(raw: str):
                 return v
     return data
 
-
 # ─────────────────────────────────────────────────────────────
 # QUESTION MODEL: validation, answers, scoring
 # ─────────────────────────────────────────────────────────────
 def norm_text(s) -> str:
     s = re.sub(r"[^\w\s]", "", str(s).casefold())
     return " ".join(s.split())
-
 
 def blank_match(answer, q) -> bool:
     na = norm_text(answer)
@@ -378,7 +447,6 @@ def blank_match(answer, q) -> bool:
             return True
     return False
 
-
 def resolve_option(val, options):
     val = str(val).strip()
     if val in options:
@@ -388,7 +456,6 @@ def resolve_option(val, options):
         return options[letters.index(val.upper())]
     m = [o for o in options if o.lower() == val.lower()]
     return m[0] if m else None
-
 
 def validate_and_shuffle(items, default_level=2, adaptive=False):
     good = []
@@ -465,10 +532,8 @@ def validate_and_shuffle(items, default_level=2, adaptive=False):
             continue
     return good
 
-
 def is_skipped(i) -> bool:
     return st.session_state.answers.get(i) in (None, "", [])
-
 
 def is_correct(i) -> bool:
     ss = st.session_state
@@ -484,10 +549,8 @@ def is_correct(i) -> bool:
         return blank_match(a, q)
     return ss.grades.get(i, {}).get("score", 0) >= 0.6
 
-
 def correct_text(q) -> str:
     return " · ".join(q["answers"]) if q["type"] == "multi" else q["answer"]
-
 
 def user_text(i) -> str:
     a = st.session_state.answers.get(i)
@@ -495,16 +558,13 @@ def user_text(i) -> str:
         return "—"
     return " | ".join(a) if isinstance(a, list) else str(a)
 
-
 def norm_answer(a):
     if isinstance(a, str):
         a = a.strip()
     return None if a in (None, "", []) else a
 
-
 def has_answer(a) -> bool:
     return norm_answer(a) is not None
-
 
 def reshuffle(q):
     q = dict(q)
@@ -514,7 +574,6 @@ def reshuffle(q):
         q["options"] = opts
     return q
 
-
 def speech_text(q) -> str:
     t = q["question"].replace("____", "blank").replace("___", "blank")
     if q["type"] in ("mcq", "multi"):
@@ -523,9 +582,8 @@ def speech_text(q) -> str:
         t += ". True ya False?"
     return t
 
-
 # ─────────────────────────────────────────────────────────────
-# AI CALLS
+# AI GENERATION & QUIZ FLOW
 # ─────────────────────────────────────────────────────────────
 def generate_quiz(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False):
     type_keys = [t for t in type_keys if t in TYPE_SPECS] or ["mcq"]
@@ -594,9 +652,7 @@ Return ONLY a JSON object: {{"questions": [ ...question objects... ]}}
         raise last_err
     return []
 
-
 def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, progress=None):
-    """Generate in batches of 10 so big quizzes (up to 50) stay reliable; later batches avoid earlier questions."""
     quiz, seen = [], set()
     avoid_list = list(avoid or [])
     attempts, max_attempts = 0, num_q // 5 + 4
@@ -607,7 +663,7 @@ def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None,
             batch = generate_quiz(text, n, diff, type_keys, lang, model, media=media, avoid=avoid_list, adaptive=adaptive)
         except Exception:
             if quiz:
-                break  # keep what we already have
+                break
             raise
         for b in batch:
             key = b["question"].strip().lower()
@@ -619,18 +675,14 @@ def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None,
             progress(min(len(quiz) / num_q, 1.0), f"{min(len(quiz), num_q)} / {num_q} sawal ban gaye…")
     return quiz[:num_q]
 
-
 def generate_with_progress(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False):
     bar = st.progress(0.0, text="Sawal ban rahe hain…")
-
     def cb(frac, msg):
         bar.progress(min(max(frac, 0.0), 1.0), text=msg)
-
     try:
         return generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media, avoid, adaptive, progress=cb)
     finally:
         bar.empty()
-
 
 def grade_short(i):
     ss = st.session_state
@@ -656,7 +708,6 @@ Be fair: accept correct ideas worded differently. Return ONLY JSON:
     ss.grades[i] = g
     return g
 
-
 def explain_more(q, user_ans, lang, model):
     key = q["question"]
     if key in st.session_state.deep:
@@ -672,7 +723,6 @@ Give: (1) why the correct answer is right, (2) why the student's choice (if wron
     st.session_state.deep[key] = text
     return text
 
-
 def make_study_plan(wrong_qs, lang, model):
     items = "\n".join(f"- [{q['topic']}] {q['question']} (correct: {correct_text(q)})" for q in wrong_qs)
     prompt = f"""A student got these quiz questions wrong or skipped them. Language: {lang}.
@@ -685,34 +735,25 @@ Write a compact revision plan in markdown:
 Under 220 words."""
     return llm([{"role": "user", "content": prompt}], model)
 
-
-# ─────────────────────────────────────────────────────────────
-# QUIZ FLOW
-# ─────────────────────────────────────────────────────────────
 def start_quiz(quiz, meta):
     st.session_state.update(fresh_run_state())
     st.session_state.update(
         quiz=quiz, quiz_id=st.session_state.quiz_id + 1, start_time=time.time(), stage="quiz", meta=meta, q_key=None
     )
 
-
 def record_time(i):
     if i not in st.session_state.times:
         st.session_state.times[i] = time.time() - st.session_state.q_start
 
-
 def queue_sound(name):
     st.session_state["sound"] = name
-
 
 def lives_left():
     ss = st.session_state
     lost = sum(1 for j in ss.locked if not is_correct(j))
     return max(LIVES - lost, 0)
 
-
 def advance(i):
-    """Move to the next question; in adaptive mode pick the next one by current level."""
     ss = st.session_state
     q = ss.quiz[i]
     if ss.meta.get("adaptive"):
@@ -727,13 +768,10 @@ def advance(i):
             ss.quiz[i + 1], ss.quiz[best] = ss.quiz[best], ss.quiz[i + 1]
     ss.idx += 1
 
-
 def fmt_marks(x):
     return f"{round(float(x), 2):g}"
 
-
 def question_marks(i):
-    """+marks for correct, -penalty for a wrong attempt, 0 for skip. Short answers get partial credit."""
     ss = st.session_state
     q = ss.quiz[i]
     m = ss.meta.get("marks", 1.0)
@@ -743,7 +781,6 @@ def question_marks(i):
     if q["type"] == "short":
         return round(m * ss.grades.get(i, {}).get("score", 0.0), 2)
     return m if is_correct(i) else -pen
-
 
 def compute_badges(pct, best_streak, avg_time, hints, diff, survival_win, n_types, perfect):
     badges = []
@@ -764,7 +801,6 @@ def compute_badges(pct, best_streak, avg_time, hints, diff, survival_win, n_type
     if len(st.session_state.history) >= 3:
         badges.append("📚 Regular Learner")
     return badges
-
 
 def finish_quiz():
     ss = st.session_state
@@ -808,12 +844,18 @@ def finish_quiz():
 
     old_level = level_of(ss.total_xp)
     ss.total_xp += xp
+    time_str = datetime.now().strftime("%d %b, %H:%M")
+    
+    # Save to Session & DB
     ss.history.append(
         {
-            "time": datetime.now().strftime("%d %b, %H:%M"), "topic": ss.meta.get("label", "Quiz"), "difficulty": diff,
+            "time": time_str, "topic": ss.meta.get("label", "Quiz"), "difficulty": diff,
             "score": correct, "total": total, "marks": marks, "max": max_marks, "acc": accuracy, "pct": pct,
         }
     )
+    if ss.user_id:
+        save_quiz_result_db(ss.user_id, ss.meta.get("label", "Quiz"), diff, marks, max_marks, accuracy, pct, time_str, xp)
+
     ss.result = {
         "score": correct, "total": total, "pct": pct, "xp": xp, "best_streak": best, "avg_time": avg_time, "hints": hints,
         "marks": marks, "max_marks": max_marks, "neg_lost": neg_lost, "attempted": attempted, "accuracy": accuracy,
@@ -824,10 +866,7 @@ def finish_quiz():
     queue_sound("win" if pct >= 50 else "lose")
     ss.stage = "result"
 
-
 def extend_quiz(n):
-    """Append n fresh questions (no repeats) to the current quiz and resume from the first new one.
-    Scores, accuracy, XP and history are recomputed for the whole quiz when it is finished again."""
     ss = st.session_state
     m = ss.meta
     new = generate_with_progress(
@@ -838,13 +877,11 @@ def extend_quiz(n):
     if not new:
         return 0
 
-    # undo the previous "finish" so the extended quiz is counted once, as a whole
     if ss.result:
         ss.total_xp = max(0, ss.total_xp - ss.result["xp"])
         if ss.history:
             ss.history.pop()
 
-    # whole-quiz timer: give the new batch its own proportional budget
     if m.get("quiz_limit"):
         per_q = m.get("quiz_per_q") or m["quiz_limit"] / max(len(ss.quiz), 1)
         m["quiz_per_q"] = per_q
@@ -864,11 +901,9 @@ def extend_quiz(n):
     ss.stage = "quiz"
     return len(new)
 
-
 def reset_all():
     st.session_state.update(fresh_run_state())
     st.session_state.stage = "setup"
-
 
 def read_pdf(file, start_page, end_page):
     reader = PdfReader(file)
@@ -879,14 +914,12 @@ def read_pdf(file, start_page, end_page):
             text += t + "\n"
     return text, len(reader.pages)
 
-
 def toggle_bookmark(q):
     bm = st.session_state.bookmarks
     if q["question"] in bm:
         bm.pop(q["question"], None)
     else:
         bm[q["question"]] = q
-
 
 def current_choice(q, qid, i):
     s, t = st.session_state, q["type"]
@@ -897,7 +930,6 @@ def current_choice(q, qid, i):
     if t == "blank":
         return s.get(f"txt_{qid}_{i}")
     return s.get(f"ta_{qid}_{i}")
-
 
 def answer_widget(q, qid, i, locked, prev):
     t = q["type"]
@@ -916,7 +948,6 @@ def answer_widget(q, qid, i, locked, prev):
         return st.text_input("Khali jagah bharo", value=prev or "", key=f"txt_{qid}_{i}", disabled=locked, placeholder="Apna answer type karo…")
     return st.text_area("Apna answer likho (1-3 line)", value=prev or "", key=f"ta_{qid}_{i}", height=120, disabled=locked)
 
-
 def feedback_html(i, q, timed_out):
     ss = st.session_state
     prev = ss.answers.get(i)
@@ -933,7 +964,6 @@ def feedback_html(i, q, timed_out):
         return f"<div class='qf-fb ok'>✅ <b>Sahi jawab!</b><br>{esc(q['explanation'])}</div>"
     why = "⏰ <b>Time khatam.</b> " if timed_out else ("⏭️ <b>Skip.</b> " if prev is None else "❌ <b>Galat.</b> ")
     return f"<div class='qf-fb no'>{why}Sahi answer: <b>{esc(correct_text(q))}</b><br>{esc(q['explanation'])}</div>"
-
 
 def build_report_html():
     ss = st.session_state
@@ -956,9 +986,8 @@ th{{background:#4B3FD1;color:#fff}} .s{{font-size:20px;margin:10px 0}}</style></
 <table><tr><th>#</th><th>Question</th><th>Your answer</th><th>Correct</th><th></th><th>Explanation</th></tr>{rows}</table>
 </body></html>"""
 
-
 # ─────────────────────────────────────────────────────────────
-# BROWSER LAYER: sound effects, text-to-speech, keyboard shortcuts
+# BROWSER LAYER
 # ─────────────────────────────────────────────────────────────
 QF_VERSION = 3
 QF_JS = r"""
@@ -1041,7 +1070,6 @@ document.getElementById('b').onclick=function(){var q=window.parent.qf;if(q){q.c
 document.getElementById('stop').onclick=function(){var s=window.parent.speechSynthesis;if(s)s.cancel();};
 </script>"""
 
-
 def render_browser_layer(sound_on, tts_lang, tts_rate, auto_read):
     ss = st.session_state
     sound = ss.pop("sound", None)
@@ -1067,7 +1095,6 @@ def render_browser_layer(sound_on, tts_lang, tts_rate, auto_read):
     )
     components.html(js, height=0)
 
-
 def speak_button(text):
     colors = (
         {"__LINE__": "rgba(30,35,80,.2)", "__BG__": "#ffffff", "__FG__": "#1B1F3B"}
@@ -1079,9 +1106,8 @@ def speak_button(text):
         code = code.replace(k, v)
     components.html(code, height=42)
 
-
 # ─────────────────────────────────────────────────────────────
-# COUNTDOWN (auto-refreshing fragment, Streamlit ≥ 1.37)
+# COUNTDOWN
 # ─────────────────────────────────────────────────────────────
 def _countdown(limit, qid, i, total, instant):
     ss = st.session_state
@@ -1104,7 +1130,6 @@ def _countdown(limit, qid, i, total, instant):
         advance(i)
     st.rerun()
 
-
 def _quiz_countdown(total_secs, qid, i):
     ss = st.session_state
     left = total_secs - (time.time() - ss.start_time)
@@ -1120,15 +1145,83 @@ def _quiz_countdown(total_secs, qid, i):
     finish_quiz()
     st.rerun()
 
-
 _fragment = getattr(st, "fragment", None)
 countdown = _fragment(run_every=1)(_countdown) if _fragment else None
 quiz_countdown = _fragment(run_every=1)(_quiz_countdown) if _fragment else None
 
 # ─────────────────────────────────────────────────────────────
+# HERO HEADER (GLOBAL)
+# ─────────────────────────────────────────────────────────────
+_order = {"setup": 0, "quiz": 1, "result": 2}
+_cur = _order.get(st.session_state.stage, -1)
+_steps = ""
+for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
+    cls = "on" if n == _cur else ("done" if 0 <= _cur and n < _cur else "")
+    _steps += f"<span class='qf-step {cls}'>{n + 1} · {name}</span>"
+
+st.markdown(
+    f"""
+<div class="qf-hero">
+  <div class="qf-title qf-display">QuizForge</div>
+  <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
+  <div class="qf-steps">{_steps}</div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+# ─────────────────────────────────────────────────────────────
+# AUTHENTICATION GATE (LOGIN WITH OTP)
+# ─────────────────────────────────────────────────────────────
+if not st.session_state.user_authenticated:
+    st.markdown("### 🔑 Login / Signup to QuizForge")
+    st.caption("Quiz history, XP score aur levels save rakhne ke liye email/mobile se login karein.")
+    
+    with st.container(key="auth_box"):
+        user_input = st.text_input("Mobile Number ya Email Address", placeholder="e.g. 9876543210 ya user@gmail.com")
+        
+        if not st.session_state.otp_sent:
+            if st.button("📲 Send OTP", type="primary", use_container_width=True):
+                if user_input.strip():
+                    st.session_state.gen_otp = str(random.randint(100000, 999999))
+                    st.session_state.otp_sent = True
+                    st.session_state.temp_user = user_input.strip()
+                    st.success(f"🔑 Demo OTP sent! Your OTP is: **{st.session_state.gen_otp}**")
+                    st.rerun()
+                else:
+                    st.warning("Kripya valid Email ya Mobile number enter karein.")
+        else:
+            st.info(f"OTP **{st.session_state.temp_user}** par bheja gaya hai. (Demo OTP: **{st.session_state.gen_otp}**)")
+            entered_otp = st.text_input("6-Digit OTP enter karein", max_chars=6)
+            
+            b_col1, b_col2 = st.columns(2)
+            if b_col1.button("✅ Verify & Login", type="primary", use_container_width=True):
+                if entered_otp.strip() == st.session_state.gen_otp:
+                    st.session_state.user_authenticated = True
+                    st.session_state.user_id = st.session_state.temp_user
+                    st.success("Login Successful!")
+                    st.rerun()
+                else:
+                    st.error("Galat OTP! Dobara try karein.")
+            
+            if b_col2.button("🔄 Resend OTP", use_container_width=True):
+                st.session_state.gen_otp = str(random.randint(100000, 999999))
+                st.success(f"Naya OTP: **{st.session_state.gen_otp}**")
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────
 with st.sidebar:
+    st.markdown(f"👤 **User:** `{st.session_state.user_id}`")
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.user_authenticated = False
+        st.session_state.user_id = None
+        st.session_state.otp_sent = False
+        reset_all()
+        st.rerun()
+    st.divider()
+
     lvl = level_of(st.session_state.total_xp)
     st.markdown(f"### 🎖️ Level {lvl}")
     st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
@@ -1194,7 +1287,7 @@ with st.sidebar:
         st.caption("Quiz ke dauran 🔖 dabao, sawal yahan save ho jayega.")
 
     st.divider()
-    st.markdown("### 🏆 Meri History")
+    st.markdown("### 🏆 Meri History (Saved)")
     if st.session_state.history:
         for h in reversed(st.session_state.history[-6:]):
             st.markdown(
@@ -1204,31 +1297,11 @@ with st.sidebar:
             )
         st.caption(f"⭐ Best score: {max(h['pct'] for h in st.session_state.history)}%")
         if st.button("Clear history"):
+            clear_user_history_db(st.session_state.user_id)
             st.session_state.history = []
             st.rerun()
     else:
         st.caption("Abhi koi quiz nahi diya. Pehla quiz banao!")
-
-# ─────────────────────────────────────────────────────────────
-# HERO
-# ─────────────────────────────────────────────────────────────
-_order = {"setup": 0, "quiz": 1, "result": 2}
-_cur = _order.get(st.session_state.stage, -1)
-_steps = ""
-for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
-    cls = "on" if n == _cur else ("done" if 0 <= _cur and n < _cur else "")
-    _steps += f"<span class='qf-step {cls}'>{n + 1} · {name}</span>"
-
-st.markdown(
-    f"""
-<div class="qf-hero">
-  <div class="qf-title qf-display">QuizForge</div>
-  <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
-  <div class="qf-steps">{_steps}</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 # ═════════════════════════════════════════════════════════════
 # STAGE · SETUP
@@ -1729,7 +1802,7 @@ else:
     d3.download_button("Quiz (JSON)", json.dumps(quiz, ensure_ascii=False, indent=2).encode("utf-8"), file_name="quiz.json", mime="application/json", use_container_width=True)
 
 # ─────────────────────────────────────────────────────────────
-# Browser layer (sound / voice / shortcuts) — keep at the very end
+# BROWSER LAYER
 # ─────────────────────────────────────────────────────────────
 _run_lang = st.session_state.meta.get("language", language) if st.session_state.stage == "quiz" else language
 render_browser_layer(
