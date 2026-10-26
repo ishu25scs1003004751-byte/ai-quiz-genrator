@@ -40,7 +40,7 @@ Content:
 {text}
 """
     completion = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": "You are a JSON generator. Respond only with valid JSON."},
             {"role": "user", "content": prompt}
