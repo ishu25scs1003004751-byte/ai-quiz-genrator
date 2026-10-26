@@ -870,7 +870,7 @@ def reset_all():
     st.session_state.stage = "setup"
 
 
-def read_pdf(file, start_page, end_page):
+  def read_pdf(file, start_page, end_page):
     reader = PdfReader(file)
     text = ""
     for p in reader.pages[start_page - 1 : end_page]:
@@ -880,6 +880,15 @@ def read_pdf(file, start_page, end_page):
     return text, len(reader.pages)
 
 
+def load_pyq_dataset():
+    if os.path.exists("pyq_data.json"):
+        try:
+            with open("pyq_data.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+    
 def toggle_bookmark(q):
     bm = st.session_state.bookmarks
     if q["question"] in bm:
@@ -1246,8 +1255,8 @@ if st.session_state.stage == "setup":
         unsafe_allow_html=True,
     )
 
-    # 🌟 DUAL TABS (Quiz Arena + Doubt Solver)
-    tab_quiz, tab_doubt = st.tabs(["🧠 Quiz Arena", "🔍 Doubt Solver & Theory"])
+    # 3 TABS (Quiz Arena + Govt PYQs + Doubt Solver)
+    tab_quiz, tab_pyq, tab_doubt = st.tabs(["🧠 Quiz Arena", "🏛️ Govt Exam PYQs", "🔍 Doubt Solver & Theory"])
 
     with tab_quiz:
         with st.container(key="srcpick"):
@@ -1340,8 +1349,55 @@ if st.session_state.stage == "setup":
                     except Exception as e:
                         st.error(friendly_error(e))
 
+    with tab_pyq:
+        # ── TAB 2: GOVT EXAM PYQ PRACTICE SECTION ──
+        st.markdown("### 🏛️ Previous Year Questions (PYQs) Practice")
+        st.caption("Target Exam choose karke real previous year papers ke authentic questions solve karein.")
+
+        with st.container(key="panel_pyq"):
+            target_exam = st.selectbox("Target Exam Select Karein:", ["SSC CGL", "RRB NTPC", "Banking (IBPS/SBI)", "UP Police Constable", "UPSC / State PCS", "General All Exams"])
+            pyq_dataset = load_pyq_dataset()
+            filtered_pyqs = [q for q in pyq_dataset if q.get("exam") == target_exam]
+
+            if filtered_pyqs:
+                st.success(f"✅ {len(filtered_pyqs)} Genuine PYQs found in Local Database for {target_exam}!")
+            else:
+                st.info(f"ℹ️ Local database contains AI-generated standard PYQs for {target_exam}.")
+
+        st.write("")
+        if st.button(f"🚀 Start {target_exam} PYQ Practice", type="primary", use_container_width=True, key="btn_start_pyq"):
+            with st.spinner(f"Preparing {target_exam} PYQs..."):
+                selected_quiz = []
+                if filtered_pyqs:
+                    raw_items = random.sample(filtered_pyqs, min(num_questions, len(filtered_pyqs)))
+                    for item in raw_items:
+                        opts = list(item["options"])
+                        random.shuffle(opts)
+                        selected_quiz.append({
+                            "type": "mcq",
+                            "question": item["question"],
+                            "options": opts,
+                            "answer": item["answer"],
+                            "explanation": item.get("explanation", ""),
+                            "hint": f"Asked in {item.get('year', 'Real Exam')}",
+                            "topic": f"{item.get('exam')} {item.get('year', '')}",
+                            "level": 2
+                        })
+                else:
+                    pyq_prompt = f"Generate {num_questions} authentic past year exam questions (PYQs) strictly based on real exam patterns for: {target_exam}. Language: {language}."
+                    selected_quiz = generate_with_progress(pyq_prompt, num_questions, difficulty, type_keys, language, model, adaptive=adaptive)
+
+                if selected_quiz:
+                    start_quiz(selected_quiz, {
+                        "label": f"{target_exam} PYQ Practice",
+                        "difficulty": difficulty, "mode": mode, "source": target_exam,
+                        "types": type_keys, "adaptive": adaptive, "language": language, "model": model,
+                        "time_limit": time_limit, "quiz_limit": quiz_limit, "marks": marks_correct, "neg": neg_frac
+                    })
+                    st.rerun()
+
     with tab_doubt:
-        # ── TAB 2: DOUBT SOLVER & THEORY FEATURE (SIMPLE ENGLISH) ──
+        # ── TAB 3: DOUBT SOLVER & THEORY FEATURE ──
         st.markdown("### 🔍 AI Doubt Solver & Concept Explainer")
         st.caption("Question ki photo upload/click karein, text query write karein ya PDF bhejkar detailed theory & step-by-step solution pao.")
 
