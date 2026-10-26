@@ -8,7 +8,7 @@ from groq import Groq
 st.set_page_config(page_title="AI Quiz Generator", page_icon="🧠", layout="wide")
 
 # Direct Key Setup
-api_key = "gsk_your_actual_groq_api_key_here"  # <--- Yahan apni Groq Key paste karein
+ api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
 client = Groq(api_key=api_key)
 # Session State
