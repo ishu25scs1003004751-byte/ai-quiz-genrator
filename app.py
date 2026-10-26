@@ -1246,88 +1246,155 @@ if st.session_state.stage == "setup":
         unsafe_allow_html=True,
     )
 
-    with st.container(key="srcpick"):
-        source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo", "📝 Notes"], horizontal=True)
+    # 🌟 NAYA FEATURE: DUAL TABS (Quiz Arena + Doubt Solver & Theory)
+    tab_quiz, tab_doubt = st.tabs(["🧠 Quiz Arena", "🔍 Doubt Solver & Theory"])
 
-    input_text, label, media = "", "", None
+    with tab_quiz:
+        with st.container(key="srcpick"):
+            source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo", "📝 Notes"], horizontal=True)
 
-    with st.container(key="panel"):
-        if source.startswith("💡"):
-            topic = st.text_input("Kis topic par quiz chahiye?", placeholder="e.g. Machine Learning basics, Indian Constitution, Python lists…")
-            st.caption("Quick picks")
-            cols = st.columns(4)
-            for c, p in zip(cols, ["Python Basics", "World History", "Human Biology", "Indian Economy"]):
-                if c.button(p, use_container_width=True, key=f"pick_{p}"):
-                    st.session_state["_picked"] = p
-                    st.rerun()
-            if st.session_state.get("_picked") and not topic:
-                topic = st.session_state["_picked"]
-                st.info(f"Selected topic: **{topic}**")
-            if topic.strip():
-                input_text = f"Topic: {topic.strip()}\nUse your own knowledge to cover this topic accurately."
-                label = topic.strip()
+        input_text, label, media = "", "", None
 
-        elif source.startswith("📄"):
-            up = st.file_uploader("PDF upload karo", type=["pdf"])
-            if up is not None:
-                try:
-                    _, total_pages = read_pdf(up, 1, 1)
-                    up.seek(0)
-                    rng = st.slider("Page range", 1, total_pages, (1, min(total_pages, 10))) if total_pages > 1 else (1, 1)
-                    pdf_text, _ = read_pdf(up, rng[0], rng[1])
-                    if pdf_text.strip():
-                        st.success(f"✅ {rng[1] - rng[0] + 1} page(s) padhe · {len(pdf_text):,} characters")
-                        if len(pdf_text) > MAX_CHARS:
-                            st.warning(f"Text lamba hai — pehle {MAX_CHARS:,} characters use honge. Page range chhota karo.")
-                        input_text, label = pdf_text, f"PDF: {up.name}"
-                    else:
-                        st.error("Is PDF se text nahi nikla (scanned lagta hai). Uske page ki **photo** upload karke try karo.")
-                except Exception as e:
-                    st.error(f"PDF read nahi ho paya: {e}")
-
-        elif source.startswith("🖼️"):
-            st.caption("Notes / book page ki photo (PNG, JPG, WEBP, max 3 MB). AI ise seedha dekhkar padhega — handwriting bhi.")
-            mf = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="media_up")
-            if mf is not None:
-                data = mf.getvalue()
-                if len(data) > MAX_IMG_BYTES:
-                    st.error("Photo 3 MB se badi hai. Chhoti ya compress ki hui photo use karo.")
-                else:
-                    st.image(data, caption=mf.name, use_container_width=True)
-                    media = {"bytes": data, "mime": mf.type or "image/jpeg"}
-                    input_text, label = "(attached image)", f"Photo: {mf.name}"
-
-        else:
-            pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
-            if pasted.strip():
-                st.caption(f"{len(pasted):,} characters")
-                input_text, label = pasted, "Pasted notes"
-
-    st.write("")
-    if st.button("✨ Quiz banao", type="primary", use_container_width=True):
-        if not input_text.strip():
-            st.warning("Pehle topic likho, photo upload karo ya notes paste karo.")
-        else:
-            with st.spinner("AI sawal bana raha hai…"):
-                try:
-                    quiz = generate_with_progress(input_text, num_questions, difficulty, type_keys, language, model, media=media, adaptive=adaptive)
-                    if not quiz:
-                        st.error("Valid sawal nahi ban paye. Dobara try karo.")
-                    else:
-                        start_quiz(
-                            quiz,
-                            {
-                                "label": label, "difficulty": difficulty, "mode": mode, "source": input_text, "media": media,
-                                "types": type_keys, "adaptive": adaptive, "language": language, "model": model, "time_limit": time_limit,
-                                "quiz_limit": quiz_limit, "marks": marks_correct, "neg": neg_frac,
-                            },
-                        )
-                        st.session_state["_picked"] = ""
+        with st.container(key="panel"):
+            if source.startswith("💡"):
+                topic = st.text_input("Kis topic par quiz chahiye?", placeholder="e.g. Machine Learning basics, Indian Constitution, Python lists…")
+                st.caption("Quick picks")
+                cols = st.columns(4)
+                for c, p in zip(cols, ["Python Basics", "World History", "Human Biology", "Indian Economy"]):
+                    if c.button(p, use_container_width=True, key=f"pick_{p}"):
+                        st.session_state["_picked"] = p
                         st.rerun()
-                except json.JSONDecodeError:
-                    st.error("AI ka response samajh nahi aaya. Dobara try karo ya doosra model chuno.")
-                except Exception as e:
-                    st.error(friendly_error(e))
+                if st.session_state.get("_picked") and not topic:
+                    topic = st.session_state["_picked"]
+                    st.info(f"Selected topic: **{topic}**")
+                if topic.strip():
+                    input_text = f"Topic: {topic.strip()}\nUse your own knowledge to cover this topic accurately."
+                    label = topic.strip()
+
+            elif source.startswith("📄"):
+                up = st.file_uploader("PDF upload karo", type=["pdf"])
+                if up is not None:
+                    try:
+                        _, total_pages = read_pdf(up, 1, 1)
+                        up.seek(0)
+                        rng = st.slider("Page range", 1, total_pages, (1, min(total_pages, 10))) if total_pages > 1 else (1, 1)
+                        pdf_text, _ = read_pdf(up, rng[0], rng[1])
+                        if pdf_text.strip():
+                            st.success(f"✅ {rng[1] - rng[0] + 1} page(s) padhe · {len(pdf_text):,} characters")
+                            if len(pdf_text) > MAX_CHARS:
+                                st.warning(f"Text lamba hai — pehle {MAX_CHARS:,} characters use honge. Page range chhota karo.")
+                            input_text, label = pdf_text, f"PDF: {up.name}"
+                        else:
+                            st.error("Is PDF se text nahi nikla (scanned lagta hai). Uske page ki **photo** upload karke try karo.")
+                    except Exception as e:
+                        st.error(f"PDF read nahi ho paya: {e}")
+
+            elif source.startswith("🖼️"):
+                st.caption("Notes / book page ki photo (PNG, JPG, WEBP, max 3 MB). AI ise seedha dekhkar padhega — handwriting bhi.")
+                mf = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="media_up")
+                if mf is not None:
+                    data = mf.getvalue()
+                    if len(data) > MAX_IMG_BYTES:
+                        st.error("Photo 3 MB se badi hai. Chhoti ya compress ki hui photo use karo.")
+                    else:
+                        st.image(data, caption=mf.name, use_container_width=True)
+                        media = {"bytes": data, "mime": mf.type or "image/jpeg"}
+                        input_text, label = "(attached image)", f"Photo: {mf.name}"
+
+            else:
+                pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
+                if pasted.strip():
+                    st.caption(f"{len(pasted):,} characters")
+                    input_text, label = pasted, "Pasted notes"
+
+        st.write("")
+        if st.button("✨ Quiz banao", type="primary", use_container_width=True):
+            if not input_text.strip():
+                st.warning("Pehle topic likho, photo upload karo ya notes paste karo.")
+            else:
+                with st.spinner("AI sawal bana raha hai…"):
+                    try:
+                        quiz = generate_with_progress(input_text, num_questions, difficulty, type_keys, language, model, media=media, adaptive=adaptive)
+                        if not quiz:
+                            st.error("Valid sawal nahi ban paye. Dobara try karo.")
+                        else:
+                            start_quiz(
+                                quiz,
+                                {
+                                    "label": label, "difficulty": difficulty, "mode": mode, "source": input_text, "media": media,
+                                    "types": type_keys, "adaptive": adaptive, "language": language, "model": model, "time_limit": time_limit,
+                                    "quiz_limit": quiz_limit, "marks": marks_correct, "neg": neg_frac,
+                                },
+                            )
+                            st.session_state["_picked"] = ""
+                            st.rerun()
+                    except json.JSONDecodeError:
+                        st.error("AI ka response samajh nahi aaya. Dobara try karo ya doosra model chuno.")
+                    except Exception as e:
+                        st.error(friendly_error(e))
+
+    with tab_doubt:
+        # ── TAB 2: DOUBT SOLVER & THEORY FEATURE ──
+        st.markdown("### 🔍 AI Doubt Solver & Concept Explainer")
+        st.caption("Kisi question ki photo upload karo, text query type karo ya PDF/notes bhejkar detailed theory & step-by-step solution pao.")
+
+        with st.container(key="panel_doubt"):
+            doubt_source = st.radio("Query type", ["📝 Question / Text", "🖼️ Photo / Screenshot", "📄 PDF Document"], horizontal=True, key="d_src")
+            
+            q_text = ""
+            d_media = None
+            
+            if doubt_source.startswith("📝"):
+                q_text = st.text_area("Apna doubt / query yahan type karein:", height=150, placeholder="e.g. Explain Binary Search Tree insertion with an example...", key="d_txt")
+            elif doubt_source.startswith("🖼️"):
+                st.caption("Book page ya question ki photo upload karein (Handwritten / Printed both work).")
+                d_file = st.file_uploader("Photo upload karein", type=["png", "jpg", "jpeg", "webp"], key="d_img")
+                if d_file:
+                    data = d_file.getvalue()
+                    st.image(data, caption=d_file.name, use_container_width=True)
+                    d_media = {"bytes": data, "mime": d_file.type or "image/jpeg"}
+                    q_text = st.text_input("Koi extra instruction? (Optional)", placeholder="e.g. Step-by-step solution and key formulas", key="d_img_txt")
+            else:
+                d_pdf = st.file_uploader("PDF upload karein", type=["pdf"], key="d_pdf")
+                if d_pdf:
+                    try:
+                        q_text, _ = read_pdf(d_pdf, 1, 5)
+                        st.success("PDF Content loaded!")
+                    except Exception as e:
+                        st.error(f"PDF read error: {e}")
+
+        st.write("")
+        if st.button("💡 Solution & Theory Samjhao", type="primary", use_container_width=True, key="btn_solve_doubt"):
+            if not q_text.strip() and not d_media:
+                st.warning("Pehle doubt type karein ya photo upload karein.")
+            else:
+                with st.spinner("AI Doubt solve aur Theory generate kar raha hai..."):
+                    try:
+                        sys_prompt = f"""You are an expert tutor. Solve and explain this doubt clearly in {language}.
+Format your response using Markdown:
+1. **Direct Solution / Answer**: Step-by-step clear resolution.
+2. **Concept & Theory**: Explain the core underlying concept simply with an analogy or real-life example.
+3. **Key Takeaway / Formulas**: 2-3 important memory points.
+"""
+                        if d_media:
+                            b64 = base64.b64encode(d_media["bytes"]).decode()
+                            solution_res = llm([
+                                {"role": "system", "content": sys_prompt},
+                                {"role": "user", "content": [
+                                    {"type": "text", "text": q_text or "Solve and explain this uploaded question in detail."},
+                                    {"type": "image_url", "image_url": {"url": f"data:{d_media['mime']};base64,{b64}"}}
+                                ]}
+                            ], VISION_MODEL)
+                        else:
+                            solution_res = llm([
+                                {"role": "system", "content": sys_prompt},
+                                {"role": "user", "content": q_text}
+                            ], model)
+                            
+                        st.markdown("---")
+                        st.markdown(solution_res)
+                    except Exception as e:
+                        st.error(friendly_error(e))
 
 # ═════════════════════════════════════════════════════════════
 # STAGE · QUIZ
