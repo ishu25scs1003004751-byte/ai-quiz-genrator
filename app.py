@@ -16,23 +16,10 @@ from pypdf import PdfReader
 from groq import Groq
 import streamlit as st
 
-# Always visible floating arrow button for Mobile Sidebar
-st.markdown("""
-    <style>
-    /* Mobile Sidebar Toggle Button Visibility Fix */
-    [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        position: fixed !important;
-        top: 15px !important;
-        left: 10px !important;
-        z-index: 999999 !important;
-        background-color: #1f2937 !important;
-        border-radius: 50% !important;
-        padding: 4px !important;
-        border: 1px solid #4b5563 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Main screen par hi settings ka dropdown box
+with st.expander("⚙️ Quiz Settings (Number of Questions & Difficulty)", expanded=True):
+    num_questions = st.number_input("Kitne questions chahiye?", min_value=1, max_value=20, value=5)
+    difficulty = st.selectbox("Difficulty level select karo", ["Easy", "Medium", "Hard"])
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
