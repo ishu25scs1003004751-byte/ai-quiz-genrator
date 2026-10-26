@@ -1173,25 +1173,71 @@ st.markdown(
 # ─────────────────────────────────────────────────────────────
 # AUTHENTICATION GATE (LOGIN WITH OTP)
 # ─────────────────────────────────────────────────────────────
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# ─────────────────────────────────────────────────────────────
+# REAL EMAIL OTP SENDER FUNCTION
+# ─────────────────────────────────────────────────────────────
+def send_email_otp(to_email, otp):
+    try:
+        # Secrets se credentials fetch karein
+        sender_email = st.secrets.get("SENDER_EMAIL") or os.getenv("SENDER_EMAIL")
+        sender_password = st.secrets.get("SENDER_PASSWORD") or os.getenv("SENDER_PASSWORD")
+        
+        if not sender_email or not sender_password:
+            return False, "Email configuration Secrets me missing hai."
+
+        subject = f"{otp} is your QuizForge Verification Code"
+        body = f"Hello,\n\nQuizForge me login karne ke liye aapka verification code (OTP) hai: {otp}\n\nYe OTP kisi ke sath share na karein."
+
+        msg = MIMEMultipart()
+        msg['From'] = f"QuizForge AI <{sender_email}>"
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Gmail SMTP Server Connection
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.close()
+        return True, "Success"
+    except Exception as e:
+        return False, str(e)
+
+
+# ─────────────────────────────────────────────────────────────
+# AUTHENTICATION GATE (REAL EMAIL OTP)
+# ─────────────────────────────────────────────────────────────
 if not st.session_state.user_authenticated:
     st.markdown("### 🔑 Login / Signup to QuizForge")
-    st.caption("Quiz history, XP score aur levels save rakhne ke liye email/mobile se login karein.")
+    st.caption("Quiz history aur XP score save rakhne ke liye apna Email enter karein.")
     
     with st.container(key="auth_box"):
-        user_input = st.text_input("Mobile Number ya Email Address", placeholder="e.g. 9876543210 ya user@gmail.com")
+        user_input = st.text_input("Email Address", placeholder="e.g. user@gmail.com")
         
         if not st.session_state.otp_sent:
-            if st.button("📲 Send OTP", type="primary", use_container_width=True):
-                if user_input.strip():
-                    st.session_state.gen_otp = str(random.randint(100000, 999999))
-                    st.session_state.otp_sent = True
-                    st.session_state.temp_user = user_input.strip()
-                    st.success(f"🔑 Demo OTP sent! Your OTP is: **{st.session_state.gen_otp}**")
-                    st.rerun()
+            if st.button("📲 Send OTP to Email", type="primary", use_container_width=True):
+                if user_input.strip() and "@" in user_input:
+                    gen_otp = str(random.randint(100000, 999999))
+                    with st.spinner("OTP email par bheja ja raha hai..."):
+                        success, err = send_email_otp(user_input.strip(), gen_otp)
+                        
+                    if success:
+                        st.session_state.gen_otp = gen_otp
+                        st.session_state.otp_sent = True
+                        st.session_state.temp_user = user_input.strip()
+                        st.success("✅ OTP aapke email address par bhej diya gaya hai! Inbox / Spam folder check karein.")
+                        st.rerun()
+                    else:
+                        st.error(f"Email bhejne me issue aaya: {err}")
                 else:
-                    st.warning("Kripya valid Email ya Mobile number enter karein.")
+                    st.warning("Kripya ek valid Email address enter karein.")
         else:
-            st.info(f"OTP **{st.session_state.temp_user}** par bheja gaya hai. (Demo OTP: **{st.session_state.gen_otp}**)")
+            st.info(f"OTP **{st.session_state.temp_user}** par bheja gaya hai.")
             entered_otp = st.text_input("6-Digit OTP enter karein", max_chars=6)
             
             b_col1, b_col2 = st.columns(2)
@@ -1202,11 +1248,17 @@ if not st.session_state.user_authenticated:
                     st.success("Login Successful!")
                     st.rerun()
                 else:
-                    st.error("Galat OTP! Dobara try karein.")
+                    st.error("Galat OTP! Dobara check karke enter karein.")
             
             if b_col2.button("🔄 Resend OTP", use_container_width=True):
-                st.session_state.gen_otp = str(random.randint(100000, 999999))
-                st.success(f"Naya OTP: **{st.session_state.gen_otp}**")
+                gen_otp = str(random.randint(100000, 999999))
+                with st.spinner("Naya OTP bhej rahe hain..."):
+                    success, err = send_email_otp(st.session_state.temp_user, gen_otp)
+                if success:
+                    st.session_state.gen_otp = gen_otp
+                    st.success("Naya OTP aapke Email par bhej diya gaya hai.")
+                else:
+                    st.error(f"Error: {err}")
     st.stop()
 
 # ─────────────────────────────────────────────────────────────
