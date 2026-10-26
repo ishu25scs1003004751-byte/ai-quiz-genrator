@@ -14,15 +14,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pypdf import PdfReader
 from groq import Groq
-import streamlit as st
-
-# Main screen par hi settings ka dropdown box
-with st.expander("⚙️ Quiz Settings (Number of Questions & Difficulty)", expanded=True):
-    num_questions = st.number_input("Kitne questions chahiye?", min_value=1, max_value=20, value=5)
-    difficulty = st.selectbox("Difficulty level select karo", ["Easy", "Medium", "Hard"])
 
 # ─────────────────────────────────────────────────────────────
-# PAGE CONFIG
+# PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND)
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="QuizForge · AI Quiz Arena",
@@ -48,7 +42,23 @@ BASE_CSS = """
 }
 html, body, [class*="css"]{ font-family:'Plus Jakarta Sans',sans-serif; color:var(--txt); }
 h1,h2,h3,.qf-display{ font-family:'Space Grotesk',sans-serif !important; letter-spacing:-.02em; }
-#MainMenu, footer, header[data-testid="stHeader"]{ visibility:hidden; height:0; }
+
+/* FIX: Watermark & Header Hide without breaking Sidebar Toggle */
+#MainMenu, footer { visibility:hidden; height:0; }
+header[data-testid="stHeader"] { background: transparent !important; }
+
+/* FIX: Floating Sidebar Open/Close Toggle Button for Mobile */
+[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarExpandButton"] {
+    display: block !important;
+    position: fixed !important;
+    top: 12px !important;
+    left: 12px !important;
+    z-index: 999999 !important;
+    background-color: #1f2937 !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--line) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+}
 
 .stApp{
   background:
@@ -103,7 +113,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
   transition:border-color .12s, background .12s, transform .08s;
 }
 .st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{
-  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:9px;
+  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:99px;
   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.85rem;
   background:rgba(124,92,255,.22); color:var(--txt); border:1px solid var(--line);
 }
@@ -843,7 +853,6 @@ th{{background:#4B3FD1;color:#fff}} .s{{font-size:20px;margin:10px 0}}</style></
 
 # ─────────────────────────────────────────────────────────────
 # BROWSER LAYER: sound effects, text-to-speech, keyboard shortcuts
-# (a small script is injected once into the parent page)
 # ─────────────────────────────────────────────────────────────
 QF_VERSION = 3
 QF_JS = r"""
