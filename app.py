@@ -1233,7 +1233,6 @@ st.markdown(
 # ═════════════════════════════════════════════════════════════
 # STAGE · SETUP
 # ═════════════════════════════════════════════════════════════
-
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
@@ -1247,7 +1246,7 @@ if st.session_state.stage == "setup":
         unsafe_allow_html=True,
     )
 
-    # DUAL TABS (Quiz Arena + Doubt Solver & Theory)
+    # 🌟 DUAL TABS (Quiz Arena + Doubt Solver)
     tab_quiz, tab_doubt = st.tabs(["🧠 Quiz Arena", "🔍 Doubt Solver & Theory"])
 
     with tab_quiz:
@@ -1342,7 +1341,7 @@ if st.session_state.stage == "setup":
                         st.error(friendly_error(e))
 
     with tab_doubt:
-        # DOUBT SOLVER & THEORY FEATURE
+        # ── TAB 2: DOUBT SOLVER & THEORY FEATURE (SIMPLE ENGLISH) ──
         st.markdown("### 🔍 AI Doubt Solver & Concept Explainer")
         st.caption("Question ki photo upload/click karein, text query write karein ya PDF bhejkar detailed theory & step-by-step solution pao.")
 
@@ -1385,18 +1384,20 @@ if st.session_state.stage == "setup":
             else:
                 with st.spinner("AI Doubt solve aur Theory generate kar raha hai..."):
                     try:
-                        sys_prompt = f"""You are an expert tutor. Solve and explain this doubt clearly in {language}.
+                        sys_prompt = f"""You are a helpful and friendly tutor. 
+Solve and explain this doubt using **very simple, clear, and easy-to-understand English**.
+
 Format your response using Markdown:
-1. **Direct Solution / Answer**: Step-by-step clear resolution.
-2. **Concept & Theory**: Explain the core underlying concept simply with an analogy or real-life example.
-3. **Key Takeaway / Formulas**: 2-3 important memory points.
+1. **Direct Solution / Answer**: Give a straightforward, simple step-by-step resolution. Avoid complex jargon.
+2. **Simple Explanation & Concept**: Explain the core idea in plain English using a simple real-life analogy or easy example.
+3. **Key Points to Remember**: 2-3 short bullet points summarizing the main takeaways or formulas.
 """
                         if d_media:
                             b64 = base64.b64encode(d_media["bytes"]).decode()
                             solution_res = llm([
                                 {"role": "system", "content": sys_prompt},
                                 {"role": "user", "content": [
-                                    {"type": "text", "text": q_text or "Solve and explain this uploaded question in detail."},
+                                    {"type": "text", "text": q_text or "Solve and explain this uploaded question in simple English."},
                                     {"type": "image_url", "image_url": {"url": f"data:{d_media['mime']};base64,{b64}"}}
                                 ]}
                             ], VISION_MODEL)
