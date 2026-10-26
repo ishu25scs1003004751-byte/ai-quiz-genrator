@@ -1,30 +1,26 @@
 import os
 import json
-import time
-import random
-import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
-from google import genai
-from google.genai import types
+from groq import Groq
 
 # Page Config
 st.set_page_config(page_title="AI Quiz Generator", page_icon="🧠", layout="wide")
 
-# API Key Setup
+# API Key Setup (Groq)
 try:
-    api_key = st.secrets.get("GEMINI_API_KEY")
+    api_key = st.secrets.get("GROQ_API_KEY")
 except Exception:
     api_key = None
-api_key = api_key or os.getenv("GEMINI_API_KEY")
+api_key = api_key or os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    st.error("API key nahi mili! Streamlit Cloud ke Secrets me GEMINI_API_KEY add karein.")
+    st.error("API Key nahi mili! Streamlit Cloud Secrets me GROQ_API_KEY add karein.")
     st.stop()
 
-client = genai.Client(api_key=api_key)
+client = Groq(api_key=api_key)
 
-# Session State Initialization
+# Session State
 if "stage" not in st.session_state:
     st.session_state.stage = "setup"
 if "quiz" not in st.session_state:
@@ -32,7 +28,6 @@ if "quiz" not in st.session_state:
 if "answers" not in st.session_state:
     st.session_state.answers = {}
 
-# Helper Functions
 def clean_json(raw: str):
     raw = (raw or "").strip()
     if raw.startswith("```"):
@@ -43,18 +38,30 @@ def clean_json(raw: str):
 
 def generate_quiz(text, num_q, diff, qtype, lang):
     prompt = f"""You are an expert teacher. Create {num_q} quiz questions based on the content below.
-    Difficulty: {diff}. Type: {qtype}. Language: {lang}.
-    
-    Return ONLY a valid JSON array of objects with keys: "question", "options" (array of strings), "answer" (exact text of correct option), "explanation".
-    Content:
-    {text}
-    """
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
+Difficulty: {diff}. Type: {qtype}. Language: {lang}.
+
+Return ONLY a valid JSON array of objects with keys: "question", "options" (array of 4 strings), "answer" (exact text of correct option), "explanation".
+Content:
+{text}
+"""
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": "You are a JSON generator. Respond only with valid JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.5,
+        response_format={"type": "json_object"}
     )
-    return clean_json(response.text)
+    
+    res_text = completion.choices[0].message.content
+    data = clean_json(res_text)
+    # Extract array if wrapped in object
+    if isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list):
+                return v
+    return data
 
 # Sidebar
 st.sidebar.header("⚙️ Quiz Settings")
@@ -63,8 +70,7 @@ difficulty = st.sidebar.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
 qtype = st.sidebar.selectbox("Question Type", ["Multiple Choice", "True / False"])
 language = st.sidebar.selectbox("Language", ["English", "Hinglish", "Hindi"])
 
-# Header
-st.title("🧠 AI Quiz Generator")
+st.title("🧠 AI Quiz Generator (Powered by Groq)")
 st.write("Topic likho ya PDF upload karo aur instant Quiz pao!")
 st.divider()
 
@@ -74,7 +80,7 @@ if st.session_state.stage == "setup":
     input_text = ""
 
     if option == "Topic / Text":
-        input_text = st.text_area("Topic ya Text yahan likho:", height=150, placeholder="Example: Python Data Structures, Machine Learning basics...")
+        input_text = st.text_area("Topic ya Text yahan likho:", height=150, placeholder="Example: Python lists, Data Science basics...")
     else:
         uploaded_file = st.file_uploader("PDF File Upload Karo", type=["pdf"])
         if uploaded_file is not None:
