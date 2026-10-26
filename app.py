@@ -1349,7 +1349,7 @@ if st.session_state.stage == "setup":
                     except Exception as e:
                         st.error(friendly_error(e))
 
-   with tab_pyq:
+  with tab_pyq:
         # ── TAB 2: EXAM & SUBJECT PYQ PRACTICE SECTION (AUTO MARKING & SUBJECT FILTER) ──
         st.markdown("### 🏛️ Govt & Entrance Exam PYQs")
         st.caption("Exam aur Subject Select karein — Official negative marking rules automatic apply ho jayenge.")
