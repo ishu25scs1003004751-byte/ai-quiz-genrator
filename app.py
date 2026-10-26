@@ -870,7 +870,7 @@ def reset_all():
     st.session_state.stage = "setup"
 
 
- def read_pdf(file, start_page, end_page):
+def read_pdf(file, start_page, end_page):
     reader = PdfReader(file)
     text = ""
     for p in reader.pages[start_page - 1 : end_page]:
