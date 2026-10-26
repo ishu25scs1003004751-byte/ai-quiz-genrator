@@ -63,7 +63,7 @@ def generate_quiz(text, num_q, diff):
     """
     
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="openai/gpt-oss-120b",
         contents=prompt
     )
     return response.text
