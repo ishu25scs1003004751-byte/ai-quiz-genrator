@@ -1173,12 +1173,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─────────────────────────────────────────────────────────────
-# AUTHENTICATION GATE (LOGIN WITH OTP)
-# ─────────────────────────────────────────────────────────────
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # ─────────────────────────────────────────────────────────────
 # REAL EMAIL OTP SENDER FUNCTION
@@ -1201,12 +1195,11 @@ def send_email_otp(to_email, otp):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # Gmail SMTP Server Connection
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.close()
+        # Direct SSL Connection via Port 465 (Connection Closed Error Fix)
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+            
         return True, "Success"
     except Exception as e:
         return False, str(e)
