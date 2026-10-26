@@ -1,4 +1,4 @@
-import os
+iimport os
 import json
 import streamlit as st
 from pypdf import PdfReader
@@ -7,8 +7,12 @@ from groq import Groq
 # Page Config
 st.set_page_config(page_title="AI Quiz Generator", page_icon="🧠", layout="wide")
 
-# Direct Key Setup
- api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+# API Key Setup (Groq)
+api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    st.error("API Key nahi mili! Streamlit Cloud Secrets me GROQ_API_KEY add karein.")
+    st.stop()
 
 client = Groq(api_key=api_key)
 # Session State
