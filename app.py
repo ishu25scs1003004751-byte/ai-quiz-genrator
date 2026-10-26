@@ -16,10 +16,23 @@ from pypdf import PdfReader
 from groq import Groq
 import streamlit as st
 
-# Sidebar ki jagah main screen par Collapsible Box banao
-with st.expander("⚙️ Quiz Settings (Difficulty & Number of Questions)", expanded=True):
-    num_questions = st.slider("Number of Questions", min_value=5, max_value=20, value=10)
-    difficulty = st.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
+# Always visible floating arrow button for Mobile Sidebar
+st.markdown("""
+    <style>
+    /* Mobile Sidebar Toggle Button Visibility Fix */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        position: fixed !important;
+        top: 15px !important;
+        left: 10px !important;
+        z-index: 999999 !important;
+        background-color: #1f2937 !important;
+        border-radius: 50% !important;
+        padding: 4px !important;
+        border: 1px solid #4b5563 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
