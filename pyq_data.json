@@ -1,0 +1,29 @@
+[
+  {
+    "exam": "SSC CGL",
+    "year": "2023 Tier-1",
+    "subject": "General Awareness",
+    "question": "Which article of the Indian Constitution guarantees the Right to Equality?",
+    "options": ["Article 14-18", "Article 19-22", "Article 23-24", "Article 25-28"],
+    "answer": "Article 14-18",
+    "explanation": "Articles 14 to 18 of the Indian Constitution deal with the Right to Equality."
+  },
+  {
+    "exam": "RRB NTPC",
+    "year": "2021 CBT-1",
+    "subject": "General Science",
+    "question": "What is the chemical formula of Washing Soda?",
+    "options": ["Na2CO3.10H2O", "NaHCO3", "CaCO3", "NaOH"],
+    "answer": "Na2CO3.10H2O",
+    "explanation": "Sodium carbonate decahydrate is commonly known as washing soda."
+  },
+  {
+    "exam": "UP Police Constable",
+    "year": "2024 Shift-1",
+    "subject": "General Knowledge",
+    "question": "Which is the highest peak in Uttar Pradesh?",
+    "options": ["Amsot Peak", "Kalsubai", "Dodabetta", "Anamudi"],
+    "answer": "Amsot Peak",
+    "explanation": "Amsot Peak (Shivalik Hills, Saharanpur district) is the highest point in UP."
+  }
+]
