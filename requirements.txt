@@ -1,4 +1,4 @@
-streamlit
-groq
+streamlit>=1.40
 pypdf
+groq
 pandas
