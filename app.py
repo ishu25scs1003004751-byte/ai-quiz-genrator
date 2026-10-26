@@ -14,6 +14,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pypdf import PdfReader
 from groq import Groq
+import streamlit as st
+
+# Sidebar ki jagah main screen par Collapsible Box banao
+with st.expander("⚙️ Quiz Settings (Difficulty & Number of Questions)", expanded=True):
+    num_questions = st.slider("Number of Questions", min_value=5, max_value=20, value=10)
+    difficulty = st.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
