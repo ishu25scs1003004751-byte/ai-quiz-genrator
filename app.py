@@ -16,7 +16,7 @@ from pypdf import PdfReader
 from groq import Groq
 
 # ─────────────────────────────────────────────────────────────
-# PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND)
+# PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="QuizForge · AI Quiz Arena",
@@ -42,23 +42,7 @@ BASE_CSS = """
 }
 html, body, [class*="css"]{ font-family:'Plus Jakarta Sans',sans-serif; color:var(--txt); }
 h1,h2,h3,.qf-display{ font-family:'Space Grotesk',sans-serif !important; letter-spacing:-.02em; }
-
-/* FIX: Watermark & Header Hide without breaking Sidebar Toggle */
-#MainMenu, footer { visibility:hidden; height:0; }
-header[data-testid="stHeader"] { background: transparent !important; }
-
-/* FIX: Floating Sidebar Open/Close Toggle Button for Mobile */
-[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarExpandButton"] {
-    display: block !important;
-    position: fixed !important;
-    top: 12px !important;
-    left: 12px !important;
-    z-index: 999999 !important;
-    background-color: #1f2937 !important;
-    border-radius: 8px !important;
-    border: 1px solid var(--line) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
-}
+#MainMenu, footer, header[data-testid="stHeader"]{ visibility:hidden; height:0; }
 
 .stApp{
   background:
@@ -94,7 +78,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
 .qf-step.done{ color:var(--good); border-color:rgba(52,211,153,.5); }
 
 /* Glass panels */
-.st-key-panel, .st-key-optbox{
+.st-key-panel, .st-key-optbox, .st-key-morebox{
   background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px 22px; backdrop-filter:blur(6px);
 }
 .st-key-optbox{ padding:14px 16px; counter-reset:opt; }
@@ -113,7 +97,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
   transition:border-color .12s, background .12s, transform .08s;
 }
 .st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{
-  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:99px;
+  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:9px;
   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.85rem;
   background:rgba(124,92,255,.22); color:var(--txt); border:1px solid var(--line);
 }
@@ -257,6 +241,7 @@ MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_CHARS = 24000
 MAX_IMG_BYTES = 3 * 1024 * 1024
+MAX_TOTAL_Q = 200  # cap for one quiz, including 'aur sawal' extensions
 XP_BASE = {1: 10, 2: 15, 3: 20}
 LEVEL_NAME = {1: "Easy", 2: "Medium", 3: "Hard"}
 DIFF_LEVEL = {"Easy": 1, "Medium": 2, "Hard": 3}
@@ -290,7 +275,7 @@ TYPE_SPECS = {
 def fresh_run_state():
     return {
         "quiz": [], "idx": 0, "answers": {}, "locked": {}, "hints_used": {}, "times": {}, "timed_out": {},
-        "grades": {}, "cur_level": 2, "result": None, "study_plan": "", "celebrated": False,
+        "grades": {}, "cur_level": 2, "quiz_time_up": False, "elapsed_before": 0.0, "result": None, "study_plan": "", "celebrated": False,
         "start_time": None, "end_time": None,
     }
 
@@ -536,7 +521,7 @@ def generate_quiz(text, num_q, diff, type_keys, lang, model, media=None, avoid=N
     )
     avoid_rule = ""
     if avoid:
-        avoid_rule = "- Do NOT repeat or rephrase these earlier questions:\n  " + "\n  ".join(f"* {a}" for a in avoid[:30])
+        avoid_rule = "- Do NOT repeat or rephrase these earlier questions:\n  " + "\n  ".join(f"* {a}" for a in avoid[-40:])
     content_block = (
         "Use the attached image as the content. Read it carefully, including handwriting if present."
         if media
@@ -592,6 +577,43 @@ Return ONLY a JSON object: {{"questions": [ ...question objects... ]}}
     if last_err:
         raise last_err
     return []
+
+
+def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, progress=None):
+    """Generate in batches of 10 so big quizzes (up to 50) stay reliable; later batches avoid earlier questions."""
+    quiz, seen = [], set()
+    avoid_list = list(avoid or [])
+    attempts, max_attempts = 0, num_q // 5 + 4
+    while len(quiz) < num_q and attempts < max_attempts:
+        attempts += 1
+        n = min(10, num_q - len(quiz))
+        try:
+            batch = generate_quiz(text, n, diff, type_keys, lang, model, media=media, avoid=avoid_list, adaptive=adaptive)
+        except Exception:
+            if quiz:
+                break  # keep what we already have
+            raise
+        for b in batch:
+            key = b["question"].strip().lower()
+            if key not in seen:
+                seen.add(key)
+                quiz.append(b)
+        avoid_list += [b["question"] for b in batch]
+        if progress:
+            progress(min(len(quiz) / num_q, 1.0), f"{min(len(quiz), num_q)} / {num_q} sawal ban gaye…")
+    return quiz[:num_q]
+
+
+def generate_with_progress(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False):
+    bar = st.progress(0.0, text="Sawal ban rahe hain…")
+
+    def cb(frac, msg):
+        bar.progress(min(max(frac, 0.0), 1.0), text=msg)
+
+    try:
+        return generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media, avoid, adaptive, progress=cb)
+    finally:
+        bar.empty()
 
 
 def grade_short(i):
@@ -690,9 +712,26 @@ def advance(i):
     ss.idx += 1
 
 
-def compute_badges(pct, best_streak, avg_time, hints, diff, survival_win, n_types):
+def fmt_marks(x):
+    return f"{round(float(x), 2):g}"
+
+
+def question_marks(i):
+    """+marks for correct, -penalty for a wrong attempt, 0 for skip. Short answers get partial credit."""
+    ss = st.session_state
+    q = ss.quiz[i]
+    m = ss.meta.get("marks", 1.0)
+    pen = m * ss.meta.get("neg", 0.0)
+    if is_skipped(i):
+        return 0.0
+    if q["type"] == "short":
+        return round(m * ss.grades.get(i, {}).get("score", 0.0), 2)
+    return m if is_correct(i) else -pen
+
+
+def compute_badges(pct, best_streak, avg_time, hints, diff, survival_win, n_types, perfect):
     badges = []
-    if pct == 100:
+    if perfect:
         badges.append("💎 Perfect Score")
     if best_streak >= 5:
         badges.append("🔥 Streak Master")
@@ -739,7 +778,13 @@ def finish_quiz():
             streak = 0
 
     total = len(quiz)
-    pct = round(correct / total * 100)
+    per_q = [question_marks(i) for i in range(total)]
+    marks = round(sum(per_q), 2)
+    max_marks = round(total * ss.meta.get("marks", 1.0), 2)
+    neg_lost = round(-sum(x for x in per_q if x < 0), 2)
+    attempted = sum(1 for i in range(total) if not is_skipped(i))
+    accuracy = round(correct / attempted * 100) if attempted else 0
+    pct = max(0, round(marks / max_marks * 100)) if max_marks else 0
     avg_time = sum(ss.times.values()) / len(ss.times) if ss.times else 0
     hints = sum(1 for v in ss.hints_used.values() if v)
     survival_win = ss.meta.get("mode") == "Survival" and len(ss.locked) == total and lives_left() > 0
@@ -748,15 +793,60 @@ def finish_quiz():
     old_level = level_of(ss.total_xp)
     ss.total_xp += xp
     ss.history.append(
-        {"time": datetime.now().strftime("%d %b, %H:%M"), "topic": ss.meta.get("label", "Quiz"), "difficulty": diff, "score": correct, "total": total}
+        {
+            "time": datetime.now().strftime("%d %b, %H:%M"), "topic": ss.meta.get("label", "Quiz"), "difficulty": diff,
+            "score": correct, "total": total, "marks": marks, "max": max_marks, "acc": accuracy, "pct": pct,
+        }
     )
     ss.result = {
         "score": correct, "total": total, "pct": pct, "xp": xp, "best_streak": best, "avg_time": avg_time, "hints": hints,
+        "marks": marks, "max_marks": max_marks, "neg_lost": neg_lost, "attempted": attempted, "accuracy": accuracy,
+        "time_up": ss.quiz_time_up,
         "leveled_up": level_of(ss.total_xp) > old_level,
-        "badges": compute_badges(pct, best, avg_time, hints, diff, survival_win, n_types),
+        "badges": compute_badges(pct, best, avg_time, hints, diff, survival_win, n_types, correct == total),
     }
     queue_sound("win" if pct >= 50 else "lose")
     ss.stage = "result"
+
+
+def extend_quiz(n):
+    """Append n fresh questions (no repeats) to the current quiz and resume from the first new one.
+    Scores, accuracy, XP and history are recomputed for the whole quiz when it is finished again."""
+    ss = st.session_state
+    m = ss.meta
+    new = generate_with_progress(
+        m.get("source", ""), n, m.get("difficulty", "Medium"), m.get("types", ["mcq"]),
+        m.get("language", "English"), m.get("model", MODELS[0]),
+        media=m.get("media"), avoid=[q["question"] for q in ss.quiz], adaptive=m.get("adaptive", False),
+    )
+    if not new:
+        return 0
+
+    # undo the previous "finish" so the extended quiz is counted once, as a whole
+    if ss.result:
+        ss.total_xp = max(0, ss.total_xp - ss.result["xp"])
+        if ss.history:
+            ss.history.pop()
+
+    # whole-quiz timer: give the new batch its own proportional budget
+    if m.get("quiz_limit"):
+        per_q = m.get("quiz_per_q") or m["quiz_limit"] / max(len(ss.quiz), 1)
+        m["quiz_per_q"] = per_q
+        m["quiz_limit"] = max(30, round(per_q * len(new)))
+
+    ss.elapsed_before += (ss.end_time or time.time()) - (ss.start_time or time.time())
+    ss.start_time = time.time()
+    start = len(ss.quiz)
+    ss.quiz.extend(new)
+    ss.idx = start
+    ss.result = None
+    ss.end_time = None
+    ss.celebrated = False
+    ss.study_plan = ""
+    ss.quiz_time_up = False
+    ss.q_key = None
+    ss.stage = "quiz"
+    return len(new)
 
 
 def reset_all():
@@ -846,13 +936,14 @@ h1{{color:#4B3FD1}} table{{border-collapse:collapse;width:100%}} td,th{{border:1
 th{{background:#4B3FD1;color:#fff}} .s{{font-size:20px;margin:10px 0}}</style></head><body>
 <h1>QuizForge · Result Report</h1>
 <p>{esc(ss.meta.get('label', 'Quiz'))} · {esc(ss.meta.get('difficulty', ''))} · {datetime.now().strftime('%d %b %Y, %H:%M')}</p>
-<p class="s"><b>Score:</b> {r['score']}/{r['total']} ({r['pct']}%) &nbsp; <b>XP:</b> {r['xp']} &nbsp; <b>Best streak:</b> {r['best_streak']}</p>
+<p class="s"><b>Marks:</b> {fmt_marks(r['marks'])}/{fmt_marks(r['max_marks'])} &nbsp; <b>Accuracy:</b> {r['accuracy']}% &nbsp; <b>Correct:</b> {r['score']}/{r['total']} &nbsp; <b>XP:</b> {r['xp']} &nbsp; <b>Best streak:</b> {r['best_streak']}</p>
 <table><tr><th>#</th><th>Question</th><th>Your answer</th><th>Correct</th><th></th><th>Explanation</th></tr>{rows}</table>
 </body></html>"""
 
 
 # ─────────────────────────────────────────────────────────────
 # BROWSER LAYER: sound effects, text-to-speech, keyboard shortcuts
+# (a small script is injected once into the parent page)
 # ─────────────────────────────────────────────────────────────
 QF_VERSION = 3
 QF_JS = r"""
@@ -999,8 +1090,25 @@ def _countdown(limit, qid, i, total, instant):
     st.rerun()
 
 
+def _quiz_countdown(total_secs, qid, i):
+    ss = st.session_state
+    left = total_secs - (time.time() - ss.start_time)
+    if left > 0:
+        m, sec = divmod(math.ceil(left), 60)
+        st.progress(max(left / total_secs, 0.0), text=f"⏳ Quiz ka time bacha: {m:02d}:{sec:02d}")
+        return
+    q = ss.quiz[i]
+    if not ss.locked.get(i):
+        ss.answers[i] = norm_answer(current_choice(q, qid, i))
+        record_time(i)
+    ss.quiz_time_up = True
+    finish_quiz()
+    st.rerun()
+
+
 _fragment = getattr(st, "fragment", None)
 countdown = _fragment(run_every=1)(_countdown) if _fragment else None
+quiz_countdown = _fragment(run_every=1)(_quiz_countdown) if _fragment else None
 
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -1011,7 +1119,7 @@ with st.sidebar:
     st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
 
     st.markdown("### ⚙️ Quiz Settings")
-    num_questions = st.slider("Questions", 3, 20, 5)
+    num_questions = st.slider("Questions", 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
     difficulty = st.select_slider("Difficulty", ["Easy", "Medium", "Hard"], value="Medium")
     adaptive = st.toggle("🎚️ Adaptive difficulty", value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
     type_sel = st.multiselect("Question types", list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
@@ -1022,10 +1130,30 @@ with st.sidebar:
         ["Practice", "Exam", "Survival"],
         help="Practice: har sawal ke baad turant answer.\nExam: result end me.\nSurvival: sirf 3 lives — 3 galat answer par game over!",
     )
-    timer_opt = st.selectbox("Timer per question", ["Off", "15 sec", "30 sec", "60 sec"], help="Time khatam hote hi answer auto-submit.")
-    time_limit = 0 if timer_opt == "Off" else int(timer_opt.split()[0])
-    if time_limit and countdown is None:
+    st.markdown("**⏱️ Timer**")
+    timer_mode = st.selectbox("Timer type", ["Off", "Har sawal par", "Poore quiz ka"], label_visibility="collapsed")
+    time_limit = quiz_limit = 0
+    if timer_mode == "Har sawal par":
+        pick = st.selectbox("Seconds per sawal", [10, 15, 20, 30, 45, 60, 90, 120, "Custom"], index=3)
+        time_limit = int(st.number_input("Custom seconds", 5, 600, 30, 5)) if pick == "Custom" else int(pick)
+        st.caption("Time khatam hote hi answer auto-submit ho jata hai.")
+    elif timer_mode == "Poore quiz ka":
+        pick = st.selectbox("Minutes (poore quiz ke)", [5, 10, 15, 20, 30, 45, 60, 90, "Custom"], index=1)
+        mins = int(st.number_input("Custom minutes", 1, 180, 10, 1)) if pick == "Custom" else int(pick)
+        quiz_limit = mins * 60
+        st.caption(f"≈ {quiz_limit / max(num_questions, 1):.0f} sec per sawal. Time khatam to quiz apne aap submit.")
+    if (time_limit or quiz_limit) and countdown is None:
         st.warning("Timer ke liye Streamlit ≥ 1.37 chahiye.")
+
+    st.markdown("**🎯 Marking**")
+    marks_correct = float(st.selectbox("Marks per sahi answer", [1, 2, 4, 5], index=0))
+    neg_label = st.selectbox(
+        "Negative marking (galat par)",
+        ["Nahi", "¼ (−0.25)", "⅓ (−0.33)", "½ (−0.5)", "Full (−1)"],
+        help="Galat answer par sahi-marks ka itna hissa katega. Skip par 0. Short answer me partial marks milte hain, negative nahi.",
+    )
+    neg_frac = {"Nahi": 0.0, "¼ (−0.25)": 0.25, "⅓ (−0.33)": 1 / 3, "½ (−0.5)": 0.5, "Full (−1)": 1.0}[neg_label]
+    st.caption(f"+{fmt_marks(marks_correct)} sahi · −{fmt_marks(marks_correct * neg_frac)} galat · 0 skip")
 
     with st.expander("🔊 Awaaz & Look"):
         sound_on = st.toggle("Sound effects", value=True, key="sound_on")
@@ -1054,13 +1182,12 @@ with st.sidebar:
     st.markdown("### 🏆 Meri History")
     if st.session_state.history:
         for h in reversed(st.session_state.history[-6:]):
-            pct_h = round(h["score"] / h["total"] * 100)
             st.markdown(
-                f"**{esc(h['topic'])[:28]}**  \n{h['score']}/{h['total']} · {pct_h}% · {h['difficulty']}  \n"
+                f"**{esc(h['topic'])[:28]}**  \n{fmt_marks(h['marks'])}/{fmt_marks(h['max'])} marks · {h['acc']}% acc · {h['difficulty']}  \n"
                 f"<small style='opacity:.6'>{h['time']}</small>",
                 unsafe_allow_html=True,
             )
-        st.caption(f"⭐ Best score: {round(max(h['score'] / h['total'] for h in st.session_state.history) * 100)}%")
+        st.caption(f"⭐ Best score: {max(h['pct'] for h in st.session_state.history)}%")
         if st.button("Clear history"):
             st.session_state.history = []
             st.rerun()
@@ -1093,7 +1220,7 @@ st.markdown(
 # ═════════════════════════════════════════════════════════════
 if st.session_state.stage == "setup":
     hist = st.session_state.history
-    best_pct = round(max(h["score"] / h["total"] for h in hist) * 100) if hist else 0
+    best_pct = max(h["pct"] for h in hist) if hist else 0
     st.markdown(
         f"""<div class="qf-tiles">
   <div class="qf-tile"><div class="v">{lvl}</div><div class="l">Level</div></div>
@@ -1168,7 +1295,7 @@ if st.session_state.stage == "setup":
         else:
             with st.spinner("AI sawal bana raha hai…"):
                 try:
-                    quiz = generate_quiz(input_text, num_questions, difficulty, type_keys, language, model, media=media, adaptive=adaptive)
+                    quiz = generate_with_progress(input_text, num_questions, difficulty, type_keys, language, model, media=media, adaptive=adaptive)
                     if not quiz:
                         st.error("Valid sawal nahi ban paye. Dobara try karo.")
                     else:
@@ -1177,6 +1304,7 @@ if st.session_state.stage == "setup":
                             {
                                 "label": label, "difficulty": difficulty, "mode": mode, "source": input_text, "media": media,
                                 "types": type_keys, "adaptive": adaptive, "language": language, "model": model, "time_limit": time_limit,
+                                "quiz_limit": quiz_limit, "marks": marks_correct, "neg": neg_frac,
                             },
                         )
                         st.session_state["_picked"] = ""
@@ -1202,6 +1330,7 @@ elif st.session_state.stage == "quiz":
     survival = mode_now == "Survival"
     instant = mode_now in ("Practice", "Survival")
     limit = ss.meta.get("time_limit", 0)
+    quiz_limit = ss.meta.get("quiz_limit", 0)
     is_adaptive = ss.meta.get("adaptive", False)
     lang, mdl = ss.meta.get("language", "English"), ss.meta.get("model", MODELS[0])
 
@@ -1216,16 +1345,21 @@ elif st.session_state.stage == "quiz":
         left = lives_left()
         top_r.markdown(f"<div class='qf-hearts'>{'❤️' * left}{'🖤' * (LIVES - left)}</div>", unsafe_allow_html=True)
     else:
-        top_r.markdown(f"<div style='text-align:right;font-weight:700'>✅ {answered}/{total}</div>", unsafe_allow_html=True)
+        running = f"🎯 {fmt_marks(sum(question_marks(j) for j in ss.locked))} · " if instant else ""
+        top_r.markdown(f"<div style='text-align:right;font-weight:700'>{running}✅ {answered}/{total}</div>", unsafe_allow_html=True)
 
     locked = ss.locked.get(i, False)
     if limit and countdown is not None and not locked:
         countdown(limit, qid, i, total, instant)
+    if quiz_limit and quiz_countdown is not None:
+        quiz_countdown(quiz_limit, qid, i)
 
     type_label = {"mcq": "MCQ", "tf": "True/False", "multi": "Multi-select", "blank": "Fill in the blank", "short": "Short answer"}[qtype_now]
     lv_tag = f"<span class='qf-tag lv'>🎚️ {LEVEL_NAME[q['level']]}</span>" if is_adaptive else ""
+    _m, _pen = ss.meta.get("marks", 1.0), ss.meta.get("marks", 1.0) * ss.meta.get("neg", 0.0)
+    mk_tag = f"<span class='qf-tag'>+{fmt_marks(_m)}" + (f" / −{fmt_marks(_pen)}" if _pen and qtype_now != "short" else "") + "</span>"
     st.markdown(
-        f"""<div class="qf-qcard"><div class="qf-tags">{lv_tag}<span class='qf-tag'>{type_label}</span><span class='qf-tag'>{esc(q['topic'])}</span></div>
+        f"""<div class="qf-qcard"><div class="qf-tags">{lv_tag}{mk_tag}<span class='qf-tag'>{type_label}</span><span class='qf-tag'>{esc(q['topic'])}</span></div>
         <div class="qf-qnum">Question {i + 1}</div>
         <div class="qf-qtext">{esc(q['question'])}</div></div>""",
         unsafe_allow_html=True,
@@ -1369,7 +1503,7 @@ else:
     skipped_idx = [i for i in range(total) if is_skipped(i)]
     wrong_idx = [i for i in range(total) if i not in correct_idx and i not in skipped_idx]
     pct, score = res["pct"], res["score"]
-    elapsed = (ss.end_time or time.time()) - (ss.start_time or time.time())
+    elapsed = ss.elapsed_before + (ss.end_time or time.time()) - (ss.start_time or time.time())
 
     if pct >= 80:
         color, title, msg = "#34D399", "Zabardast! 🏆", "Topic par tumhari pakad mast hai."
@@ -1385,10 +1519,20 @@ else:
 
     st.markdown(f"## {title}")
     st.caption(msg)
+    _m = ss.meta.get("marks", 1.0)
+    st.caption(f"Marking: +{fmt_marks(_m)} sahi · −{fmt_marks(_m * ss.meta.get('neg', 0.0))} galat · 0 skip  |  Accuracy = sahi ÷ attempted")
+    if res.get("time_up"):
+        st.warning("⏰ Quiz ka total time khatam ho gaya — bache hue sawal skip maane gaye.")
     st.markdown(
         f"""
 <div class="qf-ring" style="--t:{pct};--ring-color:{color}">
-  <div class="qf-ring-in"><div class="big">{pct}%</div><div class="sm">{score} / {total}</div></div>
+  <div class="qf-ring-in"><div class="big">{pct}%</div><div class="sm">{fmt_marks(res['marks'])} / {fmt_marks(res['max_marks'])} marks</div></div>
+</div>
+<div class="qf-tiles">
+  <div class="qf-tile"><div class="v" style="color:#FFC857">{fmt_marks(res['marks'])}<span style="font-size:.9rem;opacity:.7"> / {fmt_marks(res['max_marks'])}</span></div><div class="l">Marks</div></div>
+  <div class="qf-tile"><div class="v" style="color:#22D3EE">{res['accuracy']}%</div><div class="l">Accuracy</div></div>
+  <div class="qf-tile"><div class="v">{res['attempted']}<span style="font-size:.9rem;opacity:.7"> / {total}</span></div><div class="l">Attempted</div></div>
+  <div class="qf-tile"><div class="v" style="color:#FB7185">−{fmt_marks(res['neg_lost'])}</div><div class="l">Negative marks</div></div>
 </div>
 <div class="qf-tiles">
   <div class="qf-tile"><div class="v" style="color:#34D399">{score}</div><div class="l">Sahi</div></div>
@@ -1412,6 +1556,29 @@ else:
             unsafe_allow_html=True,
         )
 
+    with st.container(key="morebox"):
+        game_over_now = ss.meta.get("mode") == "Survival" and lives_left() <= 0
+        st.markdown(f"**➕ Aur sawal chahiye?**  Abhi tak **{total}** sawal ho chuke hain.")
+        mc1, mc2 = st.columns([1, 2])
+        more_n = int(mc1.number_input("Kitne aur sawal?", 1, 50, 10, 1, key="more_n", label_visibility="collapsed"))
+        can_more = (not game_over_now) and total + more_n <= MAX_TOTAL_Q
+        if mc2.button(f"➕ {more_n} aur sawal jodo", type="primary", use_container_width=True, disabled=not can_more):
+            with st.spinner("Naye sawal ban rahe hain…"):
+                try:
+                    if extend_quiz(more_n):
+                        st.rerun()
+                    else:
+                        st.error("Naye sawal nahi ban paye. Dobara try karo.")
+                except Exception as e:
+                    st.error(friendly_error(e))
+        note = "Naye sawal isi quiz me jud jayenge — marks, accuracy aur XP poore quiz ka milkar banega."
+        if game_over_now:
+            note = "Survival me saari lives khatam ho chuki hain, isliye aur sawal nahi jud sakte."
+        elif total + more_n > MAX_TOTAL_Q:
+            note = f"Ek quiz me maximum {MAX_TOTAL_Q} sawal ho sakte hain."
+        st.caption(note)
+    st.write("")
+
     a1, a2 = st.columns(2)
     if a1.button("🔁 Naya quiz", use_container_width=True, type="primary"):
         reset_all()
@@ -1431,7 +1598,7 @@ else:
         m = ss.meta
         with st.spinner("Naye sawal ban rahe hain…"):
             try:
-                new_quiz = generate_quiz(
+                new_quiz = generate_with_progress(
                     m.get("source", ""), len(quiz), m.get("difficulty", "Medium"), m.get("types", ["mcq"]), lang, mdl,
                     media=m.get("media"), avoid=[q["question"] for q in quiz], adaptive=m.get("adaptive", False),
                 )
@@ -1506,6 +1673,8 @@ else:
                     st.markdown(f"🧪 **AI score:** {g['score']:.1f}/1 — {g['feedback']}")
             if is_skipped(i):
                 st.caption("Ye sawal skip hua / time khatam ho gaya / game over ho gaya.")
+            _mk = question_marks(i)
+            st.caption(f"🎯 Marks: {'+' if _mk > 0 else ''}{fmt_marks(_mk)}")
             st.info(f"💡 {q['explanation']}")
             c1, c2 = st.columns(2)
             if c1.button("🧠 Aur detail me samjhao", key=f"rv_deep_{ss.quiz_id}_{i}"):
@@ -1533,6 +1702,7 @@ else:
                 "Your answer": user_text(i),
                 "Correct answer": correct_text(q),
                 "Result": "Correct" if is_correct(i) else "Wrong/Skipped",
+                "Marks": question_marks(i),
                 "Explanation": q["explanation"],
             }
             for i, q in enumerate(quiz)
