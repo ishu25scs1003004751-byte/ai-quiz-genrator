@@ -352,7 +352,7 @@ def llm(messages, model, json_mode=False, temperature=0.6):
     return r.choices[0].message.content or ""
 
 
-def llm_stream(messages, model, temperature=0.5):
+def llm_stream(messages, model, temperature=0.85):
     """Yield text chunks so answers appear word by word (used by the Doubt Solver)."""
     kwargs = dict(model=model, messages=messages, temperature=temperature, stream=True)
     if model.startswith("openai/gpt-oss"):
