@@ -223,6 +223,21 @@ div[data-baseweb="select"] *{ color:var(--txt) !important; }
 st.markdown(BASE_CSS, unsafe_allow_html=True)
 if LIGHT:
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+    st.markdown(BASE_CSS, unsafe_allow_html=True)
+if LIGHT:
+    st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+
+# Top header aur Fork button hide karne ke liye ye add karein:
+st.markdown("""
+<style>
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    .main .block-container {
+        padding-top: 2rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # API KEY / CLIENT
