@@ -10,22 +10,136 @@ import streamlit as st
 from pypdf import PdfReader
 
 # ═════════════════════════════════════════════════════════════
-# CONFIGURATION & INITIALIZATION
+# CONFIGURATION & PAGE SETUP
 # ═════════════════════════════════════════════════════════════
-st.set_page_config(page_title="QuizForge - AI Quiz & PYQ Platform", page_icon="🧠", layout="wide")
+st.set_page_config(
+    page_title="QuizForge - AI Quiz & PYQ Platform",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 MAX_CHARS = 15000
 MAX_IMG_BYTES = 3 * 1024 * 1024  # 3 MB
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 VISION_MODEL = "llama-3.2-11b-vision-preview"
 
-# Dummy LLM Helper for Groq integration (Apna Groq Client yahan use karein)
+# ═════════════════════════════════════════════════════════════
+# ORIGINAL CLASSIC GLASSMORPHISM CUSTOM STYLING (CSS)
+# ═════════════════════════════════════════════════════════════
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    
+    /* Main Background Gradient */
+    .stApp {
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+        color: #f8fafc;
+    }
+
+    /* Glassmorphism Cards */
+    div[data-testid="stVerticalBlock"] > div[element-id*="panel"],
+    div[data-testid="stVerticalBlock"] > div[element-id*="panel_pyq"],
+    div[data-testid="stVerticalBlock"] > div[element-id*="panel_doubt"] {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Top Stats Dashboard Tiles */
+    .qf-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 25px;
+    }
+    
+    .qf-tile {
+        background: rgba(30, 41, 59, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 18px 20px;
+        text-align: center;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    
+    .qf-tile:hover {
+        transform: translateY(-3px);
+        border-color: rgba(99, 102, 241, 0.4);
+    }
+    
+    .qf-tile .v {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #818cf8;
+    }
+    
+    .qf-tile .l {
+        font-size: 0.85rem;
+        color: #94a3b8;
+        font-weight: 500;
+        margin-top: 4px;
+    }
+
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        background: rgba(15, 23, 42, 0.6);
+        padding: 8px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 48px;
+        border-radius: 12px;
+        color: #94a3b8;
+        font-weight: 600;
+        border: none;
+        padding: 0 20px;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+    }
+
+    /* Custom Buttons */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+        border: none;
+        border-radius: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        padding: 12px 24px;
+        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        transition: all 0.2s ease;
+    }
+
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════
+# DUMMY / GROQ LLM API PLACEHOLDERS
+# ═════════════════════════════════════════════════════════════
 def llm(messages, model_name=DEFAULT_MODEL):
-    # Standard Groq API Call placeholder
     pass
 
 def generate_with_progress(prompt, num_questions, difficulty, type_keys, language, model, media=None, adaptive=False):
-    # Dummy quiz generation logic / Groq call return
     return []
 
 def start_quiz(quiz_data, config):
@@ -40,7 +154,7 @@ def friendly_error(e):
     return f"Kuch error aaya: {e}"
 
 # ═════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS & DATASETS
+# HELPER FUNCTIONS
 # ═════════════════════════════════════════════════════════════
 def read_pdf(file, start_page, end_page):
     reader = PdfReader(file)
@@ -72,9 +186,15 @@ if "history" not in st.session_state:
 if "total_xp" not in st.session_state:
     st.session_state.total_xp = 0
 
-# Sidebar Default Variables Setup
+# ═════════════════════════════════════════════════════════════
+# SIDEBAR NAVIGATION & SETTINGS
+# ═════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.title("⚙️ Quiz Settings")
+    st.title("⚡ QuizForge")
+    st.caption("AI-Powered Learning & PYQ Platform")
+    st.divider()
+    
+    st.subheader("⚙️ Quiz Parameters")
     num_questions = st.slider("Questions ki sankhya", 5, 30, 10)
     difficulty = st.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
     language = st.selectbox("Language", ["Hinglish", "English", "Hindi"])
@@ -90,34 +210,36 @@ with st.sidebar:
 lvl = st.session_state.total_xp // 100 + 1
 
 # ═════════════════════════════════════════════════════════════
-# STAGE · SETUP
+# STAGE · SETUP (MAIN DASHBOARD)
 # ═════════════════════════════════════════════════════════════
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
+    
+    # Classic Colorful Dashboard Stats Tiles
     st.markdown(
         f"""<div class="qf-tiles">
-  <div class="qf-tile"><div class="v">{lvl}</div><div class="l">Level</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FFC857">{st.session_state.total_xp}</div><div class="l">Total XP</div></div>
-  <div class="qf-tile"><div class="v">{len(hist)}</div><div class="l">Quizzes khele</div></div>
-  <div class="qf-tile"><div class="v" style="color:#34D399">{best_pct}%</div><div class="l">Best score</div></div>
+  <div class="qf-tile"><div class="v">⭐ {lvl}</div><div class="l">Current Level</div></div>
+  <div class="qf-tile"><div class="v" style="color:#FFC857">🔥 {st.session_state.total_xp}</div><div class="l">Total XP</div></div>
+  <div class="qf-tile"><div class="v">🎯 {len(hist)}</div><div class="l">Quizzes Completed</div></div>
+  <div class="qf-tile"><div class="v" style="color:#34D399">🏆 {best_pct}%</div><div class="l">Best Accuracy</div></div>
 </div>""",
         unsafe_allow_html=True,
     )
 
-    # 3 TABS SETUP
+    # 3-Tab Glassmorphism Navigation
     tab_quiz, tab_pyq, tab_doubt = st.tabs(["🧠 Quiz Arena", "🏛️ Govt Exam PYQs", "🔍 Doubt Solver & Theory"])
 
     with tab_quiz:
         with st.container(key="srcpick"):
-            source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo / Camera", "📝 Notes"], horizontal=True)
+            source = st.radio("Content Source Select Karein:", ["💡 Topic", "📄 PDF", "🖼️ Photo / Camera", "📝 Notes"], horizontal=True)
 
         input_text, label, media = "", "", None
 
         with st.container(key="panel"):
             if source.startswith("💡"):
                 topic = st.text_input("Kis topic par quiz chahiye?", placeholder="e.g. Machine Learning basics, Indian Constitution, Python lists…")
-                st.caption("Quick picks")
+                st.caption("🚀 Quick Topic Picks:")
                 cols = st.columns(4)
                 for c, p in zip(cols, ["Python Basics", "World History", "Human Biology", "Indian Economy"]):
                     if c.button(p, use_container_width=True, key=f"pick_{p}"):
@@ -141,16 +263,16 @@ if st.session_state.stage == "setup":
                         if pdf_text.strip():
                             st.success(f"✅ {rng[1] - rng[0] + 1} page(s) padhe · {len(pdf_text):,} characters")
                             if len(pdf_text) > MAX_CHARS:
-                                st.warning(f"Text lamba hai — pehle {MAX_CHARS:,} characters use honge. Page range chhota karo.")
+                                st.warning(f"Text lamba hai — pehle {MAX_CHARS:,} characters use honge.")
                             input_text, label = pdf_text, f"PDF: {up.name}"
                         else:
-                            st.error("Is PDF se text nahi nikla (scanned lagta hai). Uske page ki **photo** upload karke try karo.")
+                            st.error("Is PDF se text nahi nikla. Page ki **photo** upload karke try karo.")
                     except Exception as e:
-                        st.error(f"PDF read nahi ho paya: {e}")
+                        st.error(f"PDF read error: {e}")
 
             elif source.startswith("🖼️"):
                 st.caption("Photo upload karein ya direct camera se click karein.")
-                photo_mode = st.radio("Photo Mode Select Karein:", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="quiz_photo_mode")
+                photo_mode = st.radio("Photo Source:", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="quiz_photo_mode")
                 
                 mf = None
                 if photo_mode == "📁 Upload File":
@@ -161,20 +283,20 @@ if st.session_state.stage == "setup":
                 if mf is not None:
                     data = mf.getvalue()
                     if len(data) > MAX_IMG_BYTES:
-                        st.error("Photo 3 MB se badi hai. Chhoti ya compress ki hui photo use karo.")
+                        st.error("Photo 3 MB se badi hai.")
                     else:
                         st.image(data, caption="Selected Photo", use_container_width=True)
                         media = {"bytes": data, "mime": getattr(mf, "type", "image/jpeg") or "image/jpeg"}
                         input_text, label = "(attached image)", f"Photo: {getattr(mf, 'name', 'Camera Picture')}"
 
             else:
-                pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
+                pasted = st.text_area("Apne notes / article yahan paste karo", height=180, placeholder="Chapter ka text, notes, ya koi bhi article…")
                 if pasted.strip():
                     st.caption(f"{len(pasted):,} characters")
                     input_text, label = pasted, "Pasted notes"
 
         st.write("")
-        if st.button("✨ Quiz banao", type="primary", use_container_width=True):
+        if st.button("✨ Generate AI Quiz", type="primary", use_container_width=True):
             if not input_text.strip():
                 st.warning("Pehle topic likho, photo upload/click karo ya notes paste karo.")
             else:
@@ -195,12 +317,12 @@ if st.session_state.stage == "setup":
                             st.session_state["_picked"] = ""
                             st.rerun()
                     except json.JSONDecodeError:
-                        st.error("AI ka response samajh nahi aaya. Dobara try karo ya doosra model chuno.")
+                        st.error("AI ka response samajh nahi aaya. Dobara try karo.")
                     except Exception as e:
                         st.error(friendly_error(e))
 
     with tab_pyq:
-        # ── TAB 2: EXAM & SUBJECT PYQ PRACTICE SECTION (AUTO MARKING & SUBJECT FILTER) ──
+        # ── TAB 2: GOVT & ENTRANCE EXAM PYQs ──
         st.markdown("### 🏛️ Govt & Entrance Exam PYQs")
         st.caption("Exam aur Subject Select karein — Official negative marking rules automatic apply ho jayenge.")
 
@@ -218,7 +340,6 @@ if st.session_state.stage == "setup":
                 "General All Exams"
             ])
             
-            # Subject Mapping according to Exams
             EXAM_SUBJECTS = {
                 "SSC CGL": ["All Subjects Mixed", "General Awareness", "Quantitative Aptitude", "Reasoning", "English Comprehension"],
                 "RRB NTPC": ["All Subjects Mixed", "General Awareness", "Mathematics", "General Intelligence & Reasoning"],
@@ -235,7 +356,6 @@ if st.session_state.stage == "setup":
             subjects_list = EXAM_SUBJECTS.get(target_exam, ["All Subjects Mixed"])
             target_subject = st.selectbox("Subject / Unit Choose Karein:", subjects_list)
 
-            # Official Marking Rules Definition
             EXAM_MARKING = {
                 "SSC CGL": {"marks": 2.0, "neg": 0.25, "info": "+2.0 Sahi | −0.50 Galat (¼ Penalty)"},
                 "RRB NTPC": {"marks": 1.0, "neg": 0.333, "info": "+1.0 Sahi | −0.33 Galat (⅓ Penalty)"},
@@ -305,7 +425,7 @@ if st.session_state.stage == "setup":
                     st.rerun()
 
     with tab_doubt:
-        # ── TAB 3: DOUBT SOLVER & THEORY FEATURE ──
+        # ── TAB 3: DOUBT SOLVER & THEORY ──
         st.markdown("### 🔍 AI Doubt Solver & Concept Explainer")
         st.caption("Question ki photo upload/click karein, text query write karein ya PDF bhejkar detailed theory & step-by-step solution pao.")
 
