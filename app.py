@@ -564,7 +564,48 @@ def validate_and_shuffle(items, default_level=2, adaptive=False):
         except Exception:
             continue
     return good
+def otp_send(channel, ident):
+  app_name = APP_NAME
+  # auth_store se OTP generate & send hoga
+  ok, msg_key, dev_code = auth_store.request_otp(ident, channel, app_name)
 
+  if not ok:
+    if msg_key == "not_configured":
+      raise ValueError(
+          "OTP service set up nahi hai. Secrets me SMTP add karein ya"
+          " DEV_SHOW_OTP = '1' set karein."
+      )
+    elif msg_key == "wait":
+      raise ValueError("Thodi der ruk kar dobara OTP maango.")
+    elif msg_key == "too_many":
+      raise ValueError("Bahut baar OTP maang liya. Thodi der baad try karo.")
+    else:
+      raise ValueError(f"OTP Error: {msg_key}")
+
+  if dev_code:
+    st.info(f"🧪 [DEV MODE] Aapka OTP code: **{dev_code}**")
+
+
+def otp_verify(channel, ident, code):
+  user_id, msg_key = auth_store.verify_otp(ident, channel, code)
+
+  if msg_key == "ok" and user_id:
+    session_token = auth_store.create_session(user_id)
+    st.session_state["user"] = {
+        "id": str(user_id),
+        "email": ident if channel == "email" else "",
+        "phone": ident if channel == "phone" else "",
+    }
+    st.session_state["session_token"] = session_token
+    return True
+  elif msg_key == "expired":
+    raise ValueError("OTP expire ho gaya hai.")
+  elif msg_key == "wrong":
+    raise ValueError("Galat OTP daala hai.")
+  elif msg_key == "locked":
+    raise ValueError("Bahut baar galat OTP dala. Account lock ho gaya.")
+  else:
+    raise ValueError("Verification fail ho gaya.")
 
 def is_skipped(i) -> bool:
     return st.session_state.answers.get(i) in (None, "", [])
