@@ -19,11 +19,12 @@ from groq import Groq
 
 try:  # login + database (optional: without it the app runs in guest mode)
     from supabase import create_client
-except Exception:  # pragma: no cover
+except Exception:
     create_client = None
+
 try:  # keeps the user logged in after a page refresh
     import extra_streamlit_components as stx
-except Exception:  # pragma: no cover
+except Exception:
     stx = None
 
 # ─────────────────────────────────────────────────────────────
@@ -41,194 +42,290 @@ st.set_page_config(
 LIGHT = bool(st.session_state.get("light", False))
 
 # ─────────────────────────────────────────────────────────────
-# STYLING — midnight ink, violet→cyan energy, amber highlights
+# MULTI-LANGUAGE TRANSLATION DICTIONARY
+# ─────────────────────────────────────────────────────────────
+TRANSLATIONS = {
+    "English": {
+        "hero_sub": "Provide a Topic, PDF, or photo of notes — AI generates quizzes instantly. Learn with Audio, Timer, Lives, XP, and Badges.",
+        "step_1": "1 · Choose Content",
+        "step_2": "2 · Play Quiz",
+        "step_3": "3 · View Result",
+        "tab_quiz": "🧠 Quiz Arena",
+        "tab_pyq": "🏛️ Govt Exam PYQs",
+        "tab_doubt": "🔍 Doubt Solver",
+        "app_lang": "🌐 App Language",
+        "src_prompt": "Where should the content come from?",
+        "topic_input": "Which topic do you want a quiz on?",
+        "topic_placeholder": "e.g. Machine Learning basics, Indian Constitution, Python lists…",
+        "quick_picks": "Quick Picks",
+        "generate_btn": "✨ Generate Quiz",
+        "start_pyq_btn": "🚀 Start Exam Practice",
+        "back_btn": "⬅️ Back",
+        "next_btn": "Next ➡️",
+        "finish_btn": "Finish 🏁",
+        "check_btn": "Check answer",
+        "skip_btn": "Skip ⏭️",
+        "hint_btn": "💡 Hint (-5 XP)",
+        "save_btn": "🔖 Save",
+        "saved_btn": "📌 Saved",
+        "listen_btn": "🔊 Listen",
+        "new_quiz": "🔁 New Quiz",
+        "retry_wrong": "🎯 Retry Wrong Only",
+        "restart_quiz": "🔄 Restart Same Quiz",
+        "fresh_q": "🆕 Fresh Questions",
+        "flashcards_btn": "📇 Flashcards",
+        "level": "Level",
+        "total_xp": "Total XP",
+        "quizzes_played": "Quizzes Played",
+        "best_score": "Best Score",
+        "settings": "⚙️ Quiz Settings",
+        "questions_count": "Questions",
+        "difficulty": "Difficulty",
+        "adaptive": "🎚️ Adaptive Difficulty",
+        "q_types": "Question Types",
+        "mode": "Mode",
+        "timer": "⏱️ Timer Type",
+        "marking": "🎯 Marking",
+        "saved_questions": "🔖 Saved Questions",
+        "my_history": "🏆 My History",
+        "account": "👤 Account",
+        "logout": "🚪 Logout",
+        "backup": "💾 Progress Backup",
+    },
+    "Hinglish": {
+        "hero_sub": "Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.",
+        "step_1": "1 · Content chuno",
+        "step_2": "2 · Quiz khelo",
+        "step_3": "3 · Result dekho",
+        "tab_quiz": "🧠 Quiz Arena",
+        "tab_pyq": "🏛️ Govt Exam PYQs",
+        "tab_doubt": "🔍 Doubt Solver",
+        "app_lang": "🌐 App Language",
+        "src_prompt": "Content kahan se aayega?",
+        "topic_input": "Kis topic par quiz chahiye?",
+        "topic_placeholder": "e.g. Machine Learning basics, Indian Constitution, Python lists…",
+        "quick_picks": "Quick Picks",
+        "generate_btn": "✨ Quiz banao",
+        "start_pyq_btn": "🚀 Practice shuru karo",
+        "back_btn": "⬅️ Back",
+        "next_btn": "Next ➡️",
+        "finish_btn": "Finish 🏁",
+        "check_btn": "Check answer",
+        "skip_btn": "Skip ⏭️",
+        "hint_btn": "💡 Hint (-5 XP)",
+        "save_btn": "🔖 Save",
+        "saved_btn": "📌 Saved",
+        "listen_btn": "🔊 Sunao",
+        "new_quiz": "🔁 Naya Quiz",
+        "retry_wrong": "🎯 Sirf galat dobara",
+        "restart_quiz": "🔄 Wahi quiz phir se",
+        "fresh_q": "🆕 Naye sawal",
+        "flashcards_btn": "📇 Flashcards",
+        "level": "Level",
+        "total_xp": "Total XP",
+        "quizzes_played": "Quizzes Khele",
+        "best_score": "Best Score",
+        "settings": "⚙️ Quiz Settings",
+        "questions_count": "Sawal",
+        "difficulty": "Difficulty",
+        "adaptive": "🎚️ Adaptive Difficulty",
+        "q_types": "Question Types",
+        "mode": "Mode",
+        "timer": "⏱️ Timer Type",
+        "marking": "🎯 Marking",
+        "saved_questions": "🔖 Saved Questions",
+        "my_history": "🏆 Meri History",
+        "account": "👤 Account",
+        "logout": "🚪 Logout",
+        "backup": "💾 Progress Backup",
+    },
+    "Hindi": {
+        "hero_sub": "विषय, पीडीएफ या नोट्स की फोटो दें — एआई तुरंत क्विज़ बनाता है। आवाज, टाइमर, लाइव्स, एक्सपी और बैज के साथ सीखें।",
+        "step_1": "1 · सामग्री चुनें",
+        "step_2": "2 · क्विज़ खेलें",
+        "step_3": "3 · परिणाम देखें",
+        "tab_quiz": "🧠 क्विज़ अरीना",
+        "tab_pyq": "🏛️ सरकारी परीक्षा PYQ",
+        "tab_doubt": "🔍 डाउट सॉल्वर",
+        "app_lang": "🌐 ऐप की भाषा",
+        "src_prompt": "सामग्री कहां से आएगी?",
+        "topic_input": "किस विषय पर क्विज़ चाहिए?",
+        "topic_placeholder": "जैसे: मशीन लर्निंग, भारतीय संविधान, पाइथन लिस्ट…",
+        "quick_picks": "त्वरित चयन",
+        "generate_btn": "✨ क्विज़ बनाएं",
+        "start_pyq_btn": "🚀 अभ्यास शुरू करें",
+        "back_btn": "⬅️ पीछे",
+        "next_btn": "आगे ➡️",
+        "finish_btn": "समाप्त 🏁",
+        "check_btn": "उत्तर जांचें",
+        "skip_btn": "छोड़ें ⏭️",
+        "hint_btn": "💡 संकेत (-5 XP)",
+        "save_btn": "🔖 सहेजें",
+        "saved_btn": "📌 सहेजा गया",
+        "listen_btn": "🔊 सुनें",
+        "new_quiz": "🔁 नया क्विज़",
+        "retry_wrong": "🎯 केवल गलत पुनः प्रयास करें",
+        "restart_quiz": "🔄 वही क्विज़ पुनः चालू करें",
+        "fresh_q": "🆕 नए प्रश्न",
+        "flashcards_btn": "📇 फ्लैशकार्ड्स",
+        "level": "स्तर",
+        "total_xp": "कुल XP",
+        "quizzes_played": "खेले गए क्विज़",
+        "best_score": "सर्वश्रेष्ठ स्कोर",
+        "settings": "⚙️ क्विज़ सेटिंग्स",
+        "questions_count": "प्रश्न संख्या",
+        "difficulty": "कठिनाई",
+        "adaptive": "🎚️ अनुकूलन योग्य कठिनाई",
+        "q_types": "प्रश्न के प्रकार",
+        "mode": "मोड",
+        "timer": "⏱️ टाइमर प्रकार",
+        "marking": "🎯 अंकन योजना",
+        "saved_questions": "🔖 सहेजे गए प्रश्न",
+        "my_history": "🏆 मेरा इतिहास",
+        "account": "👤 खाता",
+        "logout": "🚪 लॉगआउट",
+        "backup": "💾 प्रगति बैकअप",
+    },
+}
+
+
+def t(key: str) -> str:
+    """Translation helper for global UI language."""
+    lang = st.session_state.get("app_lang", "Hinglish")
+    return TRANSLATIONS.get(lang, TRANSLATIONS["Hinglish"]).get(key, key)
+
+
+# ─────────────────────────────────────────────────────────────
+# STYLING — Modern Futuristic Glow Interface
 # ─────────────────────────────────────────────────────────────
 BASE_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-@property --p { syntax:'<number>'; inherits:false; initial-value:0; }
 
 :root{
-  --bg:#0B0F1E; --panel:rgba(255,255,255,.045); --panel-2:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.12); --txt:#E8EAF6; --mute:#9AA3C7;
-  --violet:#7C5CFF; --cyan:#22D3EE; --amber:#FFC857; --good:#34D399; --bad:#FB7185;
+  --bg:#070A14; --panel:rgba(255,255,255,.04); --panel-2:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.12); --txt:#E2E8F0; --mute:#94A3B8;
+  --violet:#8B5CF6; --cyan:#06B6D4; --amber:#F59E0B; --good:#10B981; --bad:#EF4444;
 }
 html, body, [class*="css"]{ font-family:'Plus Jakarta Sans',sans-serif; color:var(--txt); }
 h1,h2,h3,.qf-display{ font-family:'Space Grotesk',sans-serif !important; letter-spacing:-.02em; }
-/* Hide watermark but keep the sidebar toggle usable (important on mobile) */
+
 #MainMenu, footer{ visibility:hidden; height:0; }
 header[data-testid="stHeader"]{ background:transparent !important; }
 [data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarExpandButton"]{
   display:block !important; position:fixed !important; top:12px !important; left:12px !important; z-index:999999 !important;
-  background-color:#1f2937 !important; border-radius:8px !important; border:1px solid var(--line) !important;
-  box-shadow:0 4px 12px rgba(0,0,0,.5) !important;
+  background-color:#0F172A !important; border-radius:10px !important; border:1px solid var(--line) !important;
+  box-shadow:0 4px 20px rgba(0,0,0,.6) !important;
 }
 
 .stApp{
   background:
-    radial-gradient(1100px 560px at 8% -10%, rgba(124,92,255,.25), transparent 60%),
-    radial-gradient(900px 480px at 100% 0%, rgba(34,211,238,.15), transparent 55%),
+    radial-gradient(1200px 600px at 10% -10%, rgba(139,92,246,.22), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(6,182,212,.18), transparent 55%),
     var(--bg);
 }
-.block-container{ padding-top:1.4rem; max-width:860px; }
-section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var(--line); }
+.block-container{ padding-top:1.4rem; max-width:880px; }
+section[data-testid="stSidebar"]{ background:#0B0F19; border-right:1px solid var(--line); }
 
-/* Hero */
+/* Futuristic Glass Hero Box */
 .qf-hero{
-  position:relative; overflow:hidden; border-radius:26px; padding:38px 34px 28px; margin-bottom:18px;
-  border:1px solid var(--line);
+  position:relative; overflow:hidden; border-radius:24px; padding:36px 32px 26px; margin-bottom:20px;
+  border:1px solid var(--line); backdrop-filter:blur(12px);
   background:
-    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0/28px 28px,
-    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0/28px 28px,
-    linear-gradient(135deg, rgba(124,92,255,.35), rgba(34,211,238,.12) 70%, rgba(11,15,30,.4));
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px) 0 0/24px 24px,
+    linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px) 0 0/24px 24px,
+    linear-gradient(135deg, rgba(139,92,246,.3), rgba(6,182,212,.15) 70%, rgba(7,10,20,.6));
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
 }
 .qf-hero:after{
-  content:""; position:absolute; width:340px; height:340px; right:-90px; top:-120px; border-radius:50%;
-  background:radial-gradient(circle, rgba(255,200,87,.38), transparent 65%); filter:blur(6px);
+  content:""; position:absolute; width:300px; height:300px; right:-80px; top:-100px; border-radius:50%;
+  background:radial-gradient(circle, rgba(245,158,11,.25), transparent 65%); filter:blur(10px);
 }
 .qf-title{
-  font-size:3.3rem; font-weight:700; line-height:1; margin:0; position:relative; z-index:1;
-  background:linear-gradient(90deg,#fff 10%,#C9BEFF 45%,#7BE7F7 90%); -webkit-background-clip:text; background-clip:text;
+  font-size:3.2rem; font-weight:700; line-height:1.05; margin:0; position:relative; z-index:1;
+  background:linear-gradient(90deg,#FFFFFF 10%,#DDD6FE 45%,#38BDF8 90%); -webkit-background-clip:text; background-clip:text;
   -webkit-text-fill-color:transparent;
 }
-.qf-sub{ margin-top:12px; color:#C3C9EA; font-size:1.05rem; max-width:560px; position:relative; z-index:1; }
-.qf-steps{ display:flex; gap:8px; margin-top:20px; position:relative; z-index:1; flex-wrap:wrap; }
-.qf-step{ padding:6px 14px; border-radius:99px; font-size:.82rem; font-weight:600; color:#AEB6DD; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.2); }
-.qf-step.on{ color:#0B0F1E; background:var(--amber); border-color:var(--amber); }
-.qf-step.done{ color:var(--good); border-color:rgba(52,211,153,.5); }
+.qf-sub{ margin-top:12px; color:#CBD5E1; font-size:1.05rem; max-width:580px; position:relative; z-index:1; line-height:1.5; }
+.qf-steps{ display:flex; gap:10px; margin-top:22px; position:relative; z-index:1; flex-wrap:wrap; }
+.qf-step{ padding:6px 16px; border-radius:99px; font-size:.82rem; font-weight:600; color:#94A3B8; border:1px solid rgba(255,255,255,.15); background:rgba(0,0,0,.3); }
+.qf-step.on{ color:#070A14; background:var(--amber); border-color:var(--amber); font-weight:700; }
+.qf-step.done{ color:var(--good); border-color:rgba(16,185,129,.4); }
 
-/* Glass panels */
+/* Glass Panels & Option Cards */
 .st-key-panel, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-panel_login, .st-key-optbox, .st-key-morebox{
-  background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px 22px; backdrop-filter:blur(6px);
+  background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; backdrop-filter:blur(8px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
 }
-.st-key-optbox{ padding:14px 16px; counter-reset:opt; }
+.st-key-optbox{ padding:16px 18px; counter-reset:opt; }
 
-/* Source picker → pills */
-.st-key-srcpick div[role="radiogroup"]{ gap:8px; flex-wrap:wrap; }
-.st-key-srcpick label[data-baseweb="radio"]{ background:var(--panel); border:1px solid var(--line); border-radius:99px; padding:8px 16px; margin:0; }
-.st-key-srcpick label[data-baseweb="radio"]:has(input:checked){ background:rgba(124,92,255,.28); border-color:var(--violet); }
+.st-key-srcpick div[role="radiogroup"]{ gap:10px; flex-wrap:wrap; }
+.st-key-srcpick label[data-baseweb="radio"]{ background:var(--panel); border:1px solid var(--line); border-radius:99px; padding:8px 18px; margin:0; transition:all 0.2s; }
+.st-key-srcpick label[data-baseweb="radio"]:has(input:checked){ background:rgba(139,92,246,.3); border-color:var(--violet); }
 .st-key-srcpick label[data-baseweb="radio"] > div:first-of-type{ display:none; }
 
-/* Answer options → numbered cards */
-.st-key-optbox div[role="radiogroup"]{ gap:0; }
 .st-key-optbox label[data-baseweb="radio"], .st-key-optbox label[data-baseweb="checkbox"]{
   display:flex; align-items:center; gap:12px;
-  background:var(--panel-2); border:1.5px solid var(--line); border-radius:14px; padding:12px 14px; margin:0 0 10px; width:100%;
-  transition:border-color .12s, background .12s, transform .08s;
+  background:var(--panel-2); border:1.5px solid var(--line); border-radius:14px; padding:12px 16px; margin:0 0 12px; width:100%;
+  transition:all .15s ease;
 }
 .st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{
-  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:28px; height:28px; border-radius:9px;
-  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.85rem;
-  background:rgba(124,92,255,.22); color:var(--txt); border:1px solid var(--line);
+  counter-increment:opt; content:counter(opt); flex:0 0 auto; width:30px; height:30px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.88rem;
+  background:rgba(139,92,246,.25); color:var(--txt); border:1px solid var(--line);
 }
 .st-key-optbox label[data-baseweb="radio"] > div:first-of-type{ display:none; }
-.st-key-optbox label[data-baseweb="radio"]:hover, .st-key-optbox label[data-baseweb="checkbox"]:hover{ border-color:var(--cyan); transform:translateX(2px); }
-.st-key-optbox label:has(input:checked){ border-color:var(--violet); background:rgba(124,92,255,.22); }
+.st-key-optbox label[data-baseweb="radio"]:hover, .st-key-optbox label[data-baseweb="checkbox"]:hover{ border-color:var(--cyan); transform:translateX(3px); }
+.st-key-optbox label:has(input:checked){ border-color:var(--violet); background:rgba(139,92,246,.25); }
 .st-key-optbox label:has(input:checked)::before{ background:var(--violet); color:#fff; border-color:var(--violet); }
 
-/* Question card */
-@keyframes qf-rise{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+/* Question Card */
 .qf-qcard{
-  position:relative; background:linear-gradient(160deg, rgba(124,92,255,.18), rgba(255,255,255,.04));
-  border:1px solid var(--line); border-radius:20px; padding:24px 26px; margin:12px 0 12px; animation:qf-rise .35s ease-out;
+  position:relative; background:linear-gradient(160deg, rgba(139,92,246,.2), rgba(255,255,255,.03));
+  border:1px solid var(--line); border-radius:22px; padding:26px 28px; margin:14px 0;
 }
-.qf-qcard:before{ content:""; position:absolute; left:0; top:20px; bottom:20px; width:5px; border-radius:0 6px 6px 0; background:var(--amber); }
-.qf-qnum{ font-size:.82rem; font-weight:700; color:var(--amber); margin-bottom:8px; }
-.qf-qtext{ font-family:'Space Grotesk',sans-serif; font-size:1.4rem; font-weight:500; line-height:1.38; }
+.qf-qcard:before{ content:""; position:absolute; left:0; top:22px; bottom:22px; width:5px; border-radius:0 6px 6px 0; background:var(--amber); }
+.qf-qnum{ font-size:.85rem; font-weight:700; color:var(--amber); margin-bottom:8px; }
+.qf-qtext{ font-family:'Space Grotesk',sans-serif; font-size:1.45rem; font-weight:500; line-height:1.4; }
 .qf-tags{ float:right; display:flex; gap:6px; }
-.qf-tag{ font-size:.74rem; padding:3px 11px; border-radius:99px; border:1px solid var(--line); color:var(--mute); }
+.qf-tag{ font-size:.76rem; padding:4px 12px; border-radius:99px; border:1px solid var(--line); color:var(--mute); }
 .qf-tag.lv{ border-color:var(--cyan); color:var(--cyan); }
-.qf-kbd{ font-size:.78rem; color:var(--mute); margin:2px 0 12px; }
-.qf-kbd kbd{ background:var(--panel-2); border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:1px 7px; font-family:inherit; font-size:.76rem; color:var(--txt); }
 
-.qf-fb{ border-radius:14px; padding:14px 18px; margin:10px 0; }
-.qf-fb.ok{ background:rgba(52,211,153,.12); border:1px solid var(--good); }
-.qf-fb.no{ background:rgba(251,113,133,.12); border:1px solid var(--bad); }
-.qf-fb.mid{ background:rgba(255,200,87,.1); border:1px solid var(--amber); }
-.qf-hint{ background:rgba(255,200,87,.1); border:1px dashed var(--amber); border-radius:12px; padding:10px 14px; margin:8px 0; }
-.qf-hearts{ text-align:right; font-size:1.15rem; letter-spacing:2px; }
+/* Stats Tiles */
+.qf-tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0 12px; }
+.qf-tile{ background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px 12px; text-align:center; }
+.qf-tile .v{ font-family:'Space Grotesk',sans-serif; font-size:1.6rem; font-weight:700; }
+.qf-tile .l{ font-size:.78rem; color:var(--mute); margin-top:2px; }
 
-/* Stats */
-.qf-tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:14px 0 10px; }
-.qf-tile{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:14px 10px; text-align:center; }
-.qf-tile .v{ font-family:'Space Grotesk',sans-serif; font-size:1.5rem; font-weight:700; }
-.qf-tile .l{ font-size:.76rem; color:var(--mute); }
-@media (max-width:640px){ .qf-tiles{ grid-template-columns:repeat(2,1fr);} .qf-title{ font-size:2.4rem; } }
-
-.qf-ring{ --t:0; position:relative; width:170px; height:170px; margin:8px auto 6px; display:flex; align-items:center; justify-content:center; }
-.qf-ring:before{
-  content:""; position:absolute; inset:0; border-radius:50%;
-  background:conic-gradient(var(--ring-color) calc(var(--p)*1%), rgba(127,127,160,.25) 0);
-  -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 15px), #000 calc(100% - 14px));
-          mask:radial-gradient(farthest-side, transparent calc(100% - 15px), #000 calc(100% - 14px));
-  animation:qf-fill 1.3s cubic-bezier(.2,.8,.2,1) forwards;
-}
-@keyframes qf-fill{ from{ --p:0; } to{ --p:var(--t); } }
-.qf-ring-in{ position:relative; text-align:center; }
-.qf-ring-in .big{ font-family:'Space Grotesk',sans-serif; font-size:2.5rem; font-weight:700; line-height:1; }
-.qf-ring-in .sm{ font-size:.85rem; color:var(--mute); }
-@media (prefers-reduced-motion:reduce){ .qf-ring:before{ animation:none; --p:var(--t); } .qf-qcard{ animation:none; } }
-
-.qf-badges{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0; }
-.qf-badge{ background:rgba(255,200,87,.12); border:1px solid var(--amber); color:var(--amber); border-radius:99px; padding:6px 14px; font-weight:700; font-size:.86rem; }
-
-.qf-flash{
-  min-height:210px; display:flex; align-items:center; justify-content:center; text-align:center; margin:12px 0;
-  background:linear-gradient(160deg, rgba(124,92,255,.2), rgba(255,255,255,.04)); border:1px solid var(--line);
-  border-radius:22px; padding:30px; font-family:'Space Grotesk',sans-serif; font-size:1.45rem; font-weight:500;
-}
-.qf-flash.back{ border-color:var(--good); background:rgba(52,211,153,.1); }
-
-/* Buttons & inputs */
+/* Buttons & Inputs */
 .stButton>button, .stDownloadButton>button{
-  border-radius:13px; font-weight:700; padding:.6rem 1.1rem; border:1px solid var(--line);
-  background:var(--panel-2); color:var(--txt); transition:transform .08s ease, border-color .12s;
+  border-radius:14px; font-weight:700; padding:.65rem 1.2rem; border:1px solid var(--line);
+  background:var(--panel-2); color:var(--txt); transition:all .15s ease;
 }
-.stButton>button:hover, .stDownloadButton>button:hover{ transform:translateY(-1px); border-color:var(--cyan); }
+.stButton>button:hover, .stDownloadButton>button:hover{ transform:translateY(-2px); border-color:var(--cyan); }
 .stButton>button[kind="primary"], [data-testid="stBaseButton-primary"]{
-  background:linear-gradient(135deg,var(--violet),#4F8CFF 55%,var(--cyan)); border:0; color:#fff;
-  box-shadow:0 8px 24px rgba(124,92,255,.35);
+  background:linear-gradient(135deg,var(--violet),#3B82F6 55%,var(--cyan)); border:0; color:#fff;
+  box-shadow:0 8px 24px rgba(139,92,246,.4);
 }
-.stButton>button:focus-visible{ outline:3px solid var(--amber); }
-.stTextInput input, .stTextArea textarea{ background:rgba(255,255,255,.05) !important; border-radius:12px !important; border:1px solid var(--line) !important; }
-div[data-testid="stExpander"]{ background:var(--panel); border:1px solid var(--line); border-radius:14px; }
-.stProgress > div > div > div > div{ background-image:linear-gradient(90deg,var(--violet),var(--cyan)); }
-iframe{ border:0; }
 </style>
 """
 
 LIGHT_CSS = """
 <style>
 :root{
-  --bg:#F4F5FC; --panel:rgba(255,255,255,.78); --panel-2:#FFFFFF;
-  --line:rgba(30,35,80,.16); --txt:#1B1F3B; --mute:#5B6390;
+  --bg:#F8FAFC; --panel:rgba(255,255,255,.85); --panel-2:#FFFFFF;
+  --line:rgba(148,163,184,.3); --txt:#0F172A; --mute:#64748B;
 }
 .stApp{
   background:
-    radial-gradient(1000px 500px at 5% -10%, rgba(124,92,255,.14), transparent 60%),
-    radial-gradient(800px 420px at 100% 0%, rgba(34,211,238,.12), transparent 55%),
-    #F4F5FC !important;
+    radial-gradient(1000px 500px at 10% -10%, rgba(139,92,246,.12), transparent 60%),
+    radial-gradient(800px 420px at 90% 10%, rgba(6,182,212,.1), transparent 55%),
+    #F8FAFC !important;
 }
 section[data-testid="stSidebar"]{ background:#FFFFFF !important; }
-.stApp [data-testid="stMarkdownContainer"] :is(p,li,h1,h2,h3,h4,strong,em,span,small):not([class*="qf-"]),
-.stApp [data-testid="stWidgetLabel"] *, .stApp [data-testid="stCaptionContainer"] *,
-.stApp label, .stApp [data-testid="stExpander"] summary *{ color:var(--txt) !important; }
-.stApp [data-testid="stCaptionContainer"] *{ color:var(--mute) !important; }
-.stApp button [data-testid="stMarkdownContainer"] *{ color:inherit !important; }
-.stApp [data-testid="stBaseButton-primary"], .stApp [data-testid="stBaseButton-primary"] *{ color:#fff !important; }
-.qf-hero{ background:linear-gradient(135deg,#4B3FD1,#6D5BFF 55%,#1CA7C9) !important; }
-.qf-hero .qf-sub{ color:#E6E9FF !important; }
-.qf-hero .qf-step{ color:#fff !important; border-color:rgba(255,255,255,.45); }
-.qf-hero .qf-step.on{ color:#0B0F1E !important; }
-.qf-badge{ color:#8A5A00; background:rgba(255,200,87,.25); }
-.qf-qnum{ color:#B77900; }
-.qf-qcard{ background:linear-gradient(160deg, rgba(124,92,255,.12), rgba(255,255,255,.9)); }
-.qf-flash{ background:linear-gradient(160deg, rgba(124,92,255,.12), rgba(255,255,255,.9)); }
-.qf-tag.lv{ color:#0A7C93; border-color:#0A7C93; }
-.stTextInput input, .stTextArea textarea{ background:#fff !important; color:var(--txt) !important; }
-div[data-baseweb="select"] > div{ background:#fff !important; }
-div[data-baseweb="select"] *{ color:var(--txt) !important; }
-.st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{ background:rgba(124,92,255,.14); }
+.qf-hero{ background:linear-gradient(135deg,#4C1D95,#6D28D9 55%,#0284C7) !important; }
+.qf-hero .qf-sub{ color:#F1F5F9 !important; }
+.qf-qcard{ background:linear-gradient(160deg, rgba(139,92,246,.1), rgba(255,255,255,.95)); }
 </style>
 """
 
@@ -273,9 +370,9 @@ AUTH_ENABLED = AUTH_CONFIGURED and create_client is not None
 MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_CHARS = 24000
-MAX_IMG_BYTES = 3 * 1024 * 1024  # size sent to the AI (after compression)
-MAX_RAW_IMG_BYTES = 15 * 1024 * 1024  # biggest photo we accept from the user
-MAX_TOTAL_Q = 200  # cap for one quiz, including 'aur sawal' extensions
+MAX_IMG_BYTES = 3 * 1024 * 1024
+MAX_RAW_IMG_BYTES = 15 * 1024 * 1024
+MAX_TOTAL_Q = 200
 XP_BASE = {1: 10, 2: 15, 3: 20}
 LEVEL_NAME = {1: "Easy", 2: "Medium", 3: "Hard"}
 DIFF_LEVEL = {"Easy": 1, "Medium": 2, "Hard": 3}
@@ -318,7 +415,7 @@ def fresh_run_state():
 
 
 GLOBAL_DEFAULTS = {
-    "stage": "setup", "quiz_id": 0, "history": [], "meta": {}, "total_xp": 0, "bookmarks": {}, "deep": {},
+    "stage": "setup", "app_lang": "Hinglish", "quiz_id": 0, "history": [], "meta": {}, "total_xp": 0, "bookmarks": {}, "deep": {},
     "flash_cards": [], "flash_i": 0, "flash_show": False, "flash_return": "setup",
     "q_key": None, "q_start": time.time(), "_picked": "",
     "pyq_uploaded": [], "doubt_thread": [], "doubt_pending": False, "doubt_opts": {},
@@ -368,7 +465,6 @@ def llm(messages, model, json_mode=False, temperature=0.6):
 
 
 def llm_stream(messages, model, temperature=0.5):
-    """Yield text chunks so answers appear word by word (used by the Doubt Solver)."""
     kwargs = dict(model=model, messages=messages, temperature=temperature, stream=True)
     if model.startswith("openai/gpt-oss"):
         kwargs["extra_body"] = {"reasoning_effort": "low"}
@@ -401,7 +497,6 @@ def clean_json(raw: str):
 # QUESTION MODEL: validation, answers, scoring
 # ─────────────────────────────────────────────────────────────
 def to_number(s):
-    """Parse '12', '-3.5', '1,200', '4.2e3', '12 m/s' -> float (or None)."""
     if s is None:
         return None
     t = str(s).strip().replace(",", "").replace("−", "-")
@@ -418,7 +513,6 @@ def fmt_num(v):
 
 
 def prepare_image(data, mime="image/jpeg", max_side=1600):
-    """Fix phone-photo rotation, shrink big photos and re-encode as JPEG so they fit the AI size limit."""
     try:
         from PIL import Image, ImageOps
 
@@ -613,7 +707,7 @@ def speech_text(q) -> str:
 
 
 # ─────────────────────────────────────────────────────────────
-# AI CALLS
+# AI GENERATION
 # ─────────────────────────────────────────────────────────────
 def generate_quiz(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, exam=None):
     type_keys = [t for t in type_keys if t in TYPE_SPECS] or ["mcq"]
@@ -692,7 +786,6 @@ Return ONLY a JSON object: {{"questions": [ ...question objects... ]}}
 
 
 def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, progress=None, exam=None):
-    """Generate in batches of 10; drops anything already seen (exact or near-identical) so repeats never reach the user."""
     quiz = []
     avoid_list = list(avoid or [])
     seen_h = {qhash(a) for a in avoid_list}
@@ -705,7 +798,7 @@ def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None,
             batch = generate_quiz(text, n, diff, type_keys, lang, model, media=media, avoid=avoid_list, adaptive=adaptive, exam=exam)
         except Exception:
             if quiz:
-                break  # keep what we already have
+                break
             raise
         for b in batch:
             if not is_duplicate(b["question"], seen_h, seen_n):
@@ -714,12 +807,12 @@ def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None,
                 quiz.append(b)
         avoid_list += [b["question"] for b in batch]
         if progress:
-            progress(min(len(quiz) / num_q, 1.0), f"{min(len(quiz), num_q)} / {num_q} sawal ban gaye…")
+            progress(min(len(quiz) / num_q, 1.0), f"{min(len(quiz), num_q)} / {num_q} questions generated…")
     return quiz[:num_q]
 
 
 def generate_with_progress(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, exam=None):
-    bar = st.progress(0.0, text="Sawal ban rahe hain…")
+    bar = st.progress(0.0, text="Generating questions…")
 
     def cb(frac, msg):
         bar.progress(min(max(frac, 0.0), 1.0), text=msg)
@@ -785,7 +878,7 @@ Under 220 words."""
 
 
 # ─────────────────────────────────────────────────────────────
-# ACCOUNT (email / phone OTP), DATABASE AND "ALREADY SEEN" MEMORY
+# DATABASE AND STORAGE HELPERS
 # ─────────────────────────────────────────────────────────────
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -799,7 +892,6 @@ def topic_key_for(kind, label) -> str:
 
 
 def is_duplicate(question, seen_hashes, seen_norms):
-    """Exact repeat or a near-identical rewording of something already seen."""
     if qhash(question) in seen_hashes:
         return True
     n = norm_text(question)
@@ -816,7 +908,6 @@ def db_uid():
 
 
 def db_try(fn, default=None):
-    """Run a DB call; never crash the quiz because of a database hiccup."""
     try:
         return fn()
     except Exception as e:
@@ -837,7 +928,6 @@ def fetch_all(make_query, page=1000, cap=20000):
 def _local_time(iso):
     try:
         from zoneinfo import ZoneInfo
-
         return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b, %H:%M")
     except Exception:
         return str(iso)[:16].replace("T", " ")
@@ -911,7 +1001,6 @@ def db_sync_bookmark(q, added):
         db_try(lambda: ss["sb"].table("bookmarks").delete().eq("user_id", uid).eq("qhash", h).execute())
 
 
-# ── "already seen" memory: same topic again => different questions ──
 def get_seen_questions(tkey, limit=80):
     ss = st.session_state
     if not tkey:
@@ -962,7 +1051,6 @@ def reset_seen(tkey):
         ss.seen_local.pop(tkey, None)
 
 
-# ── shared PYQ bank (admins write, everyone reads) ──
 def bank_hash(x):
     return qhash(f"{x['exam']}|{x['question']}")
 
@@ -1005,7 +1093,6 @@ def db_save_bank(items):
     return len(rows)
 
 
-# ── login ──
 def normalize_phone(s):
     d = re.sub(r"[^\d+]", "", s or "")
     if d.startswith("+"):
@@ -1030,20 +1117,18 @@ def auth_friendly(e, channel, verifying=False):
     msg = str(e)
     low = msg.lower()
     if channel == "phone" and any(k in low for k in ("provider", "sms", "twilio", "unsupported phone")):
-        return "Phone OTP ke liye Supabase me SMS provider (Twilio jaisa) setup hona chahiye. Abhi email se login karo."
+        return "Phone OTP ke liye Supabase me SMS provider setup hona chahiye. Email se login karein."
     if any(k in low for k in ("rate limit", "too many", "after", "seconds")) and not verifying:
-        return "Bahut jaldi-jaldi OTP maanga. Thodi der (kuch minute) baad dobara try karo."
+        return "Bahut jaldi OTP maanga. Thodi der baad try karein."
     if verifying and any(k in low for k in ("expired", "invalid", "token", "otp")):
-        return "OTP galat hai ya expire ho gaya. Naya OTP mangao."
-    if "signups not allowed" in low or "signup" in low and "disabled" in low:
-        return "Naye users ka signup abhi band hai (Supabase setting)."
+        return "OTP galat hai ya expire ho gaya hai."
     return f"Error: {msg}"
 
 
 def sb_client():
     ss = st.session_state
     if ss.get("sb") is None:
-        ss["sb"] = create_client(SB_URL, SB_KEY)  # one client PER session, never shared between users
+        ss["sb"] = create_client(SB_URL, SB_KEY)
     return ss["sb"]
 
 
@@ -1098,7 +1183,7 @@ def do_logout(cm=None, rerun=True):
     if cm is not None:
         try:
             cm.delete("qa_rt", key=f"del_rt_{int(time.time() * 1000)}")
-            time.sleep(0.6)  # give the browser a moment to apply the cookie change
+            time.sleep(0.6)
         except Exception:
             pass
     ss.clear()
@@ -1122,7 +1207,7 @@ def ensure_fresh_token(cm):
             pass
         remember_login(cm, sess.refresh_token)
     except Exception:
-        do_logout(cm, rerun=False)  # session expired -> show the login screen
+        do_logout(cm, rerun=False)
 
 
 def try_cookie_login(cm):
@@ -1144,31 +1229,25 @@ def try_cookie_login(cm):
 
 
 def render_login(cm):
-    """Draws the login screen. Returns True the moment the user is logged in."""
     ss = st.session_state
     st.markdown(
         f"""<div class="qf-hero"><div class="qf-title qf-display">{APP_NAME}</div>
-<div class="qf-sub">Login karo — tumhari history, XP aur saved sawal hamesha safe rahenge, aur har baar naye sawal milenge.</div></div>""",
+<div class="qf-sub">Login karo — tumhari history, XP aur saved sawal hamesha safe rahenge.</div></div>""",
         unsafe_allow_html=True,
     )
     otp = ss.get("otp") or {}
     with st.container(key="panel_login"):
         if not otp:
-            ch = st.radio("Login kaise karna hai?", ["📧 Email se", "📱 Mobile number se"], horizontal=True, key="login_ch")
+            ch = st.radio("Login Method", ["📧 Email", "📱 Mobile"], horizontal=True, key="login_ch")
             is_email = ch.startswith("📧")
-            raw = st.text_input(
-                "Email address" if is_email else "Mobile number", key="login_id_email" if is_email else "login_id_phone",
-                placeholder="you@example.com" if is_email else "98765 43210  (ya +91…)",
-            )
-            if not is_email:
-                st.caption("India ka number ho to sirf 10 digit likho. Dusre desh ke liye +country code.")
-            if st.button("📨 OTP bhejo", type="primary", use_container_width=True, key="otp_send_btn"):
+            raw = st.text_input("Email / Mobile", key="login_id_input", placeholder="you@example.com" if is_email else "9876543210")
+            if st.button("📨 Send OTP", type="primary", use_container_width=True, key="otp_send_btn"):
                 ident = (raw or "").strip().lower() if is_email else normalize_phone(raw)
                 if (is_email and not EMAIL_RE.match(ident or "")) or (not is_email and not ident):
-                    st.error("Sahi email likho." if is_email else "Sahi mobile number likho.")
+                    st.error("Valid Details enter karein.")
                 else:
                     channel = "email" if is_email else "phone"
-                    with st.spinner("OTP bheja ja raha hai…"):
+                    with st.spinner("OTP bhej rahe hain..."):
                         try:
                             otp_send(channel, ident)
                             ss["otp"] = {"channel": channel, "ident": ident, "sent": time.time()}
@@ -1177,15 +1256,13 @@ def render_login(cm):
                             st.error(auth_friendly(e, channel))
             return False
 
-        st.success(f"OTP bheja gaya: **{mask_ident(otp['ident'])}**")
-        code = st.text_input("OTP daalo", max_chars=10, key="otp_code", placeholder="123456")
+        st.success(f"OTP Sent to: **{mask_ident(otp['ident'])}**")
+        code = st.text_input("Enter OTP", max_chars=10, key="otp_code")
         c1, c2 = st.columns(2)
-        if c1.button("✅ Verify karo", type="primary", use_container_width=True, key="otp_verify_btn"):
+        if c1.button("✅ Verify", type="primary", use_container_width=True, key="otp_verify_btn"):
             token = re.sub(r"\s", "", code or "")
-            if not token:
-                st.warning("Pehle OTP daalo.")
-            else:
-                with st.spinner("Verify ho raha hai…"):
+            if token:
+                with st.spinner("Verifying..."):
                     try:
                         res = otp_verify(otp["channel"], otp["ident"], token)
                         complete_login(res.session, res.user, cm)
@@ -1193,30 +1270,18 @@ def render_login(cm):
                         return True
                     except Exception as e:
                         st.error(auth_friendly(e, otp["channel"], verifying=True))
-        if c2.button("🔁 OTP dobara bhejo", use_container_width=True, key="otp_resend_btn"):
-            wait = 60 - (time.time() - otp.get("sent", 0))
-            if wait > 0:
-                st.warning(f"{int(wait) + 1} second baad dobara try karo.")
-            else:
-                try:
-                    otp_send(otp["channel"], otp["ident"])
-                    ss["otp"]["sent"] = time.time()
-                    st.success("Naya OTP bhej diya.")
-                except Exception as e:
-                    st.error(auth_friendly(e, otp["channel"]))
-        if st.button("← Email / number badlo", key="otp_back"):
+        if c2.button("← Change", key="otp_back"):
             ss["otp"] = {}
             st.rerun()
     return False
 
 
 def ensure_auth():
-    """Login gate. Returns the cookie manager (or None). Stops the script until the user is logged in."""
     ss = st.session_state
     if not AUTH_CONFIGURED:
         return None
     if create_client is None:
-        st.error("`supabase` package install nahi hai. requirements.txt me `supabase` aur `extra-streamlit-components` add karo.")
+        st.error("Supabase module missing.")
         st.stop()
     cm = None
     if stx is not None:
@@ -1241,7 +1306,7 @@ def ensure_auth():
 
 
 # ─────────────────────────────────────────────────────────────
-# QUIZ FLOW
+# QUIZ FLOW HELPERS
 # ─────────────────────────────────────────────────────────────
 def start_quiz(quiz, meta):
     st.session_state.update(fresh_run_state())
@@ -1267,7 +1332,6 @@ def lives_left():
 
 
 def advance(i):
-    """Move to the next question; in adaptive mode pick the next one by current level."""
     ss = st.session_state
     q = ss.quiz[i]
     if ss.meta.get("adaptive"):
@@ -1288,7 +1352,6 @@ def fmt_marks(x):
 
 
 def question_marks(i):
-    """+marks for correct, -penalty for a wrong attempt, 0 for skip. Short answers get partial credit."""
     ss = st.session_state
     q = ss.quiz[i]
     m = ss.meta.get("marks", 1.0)
@@ -1381,11 +1444,9 @@ def finish_quiz():
 
 
 # ─────────────────────────────────────────────────────────────
-# PYQ DATABASE, MORE-QUESTIONS, PROGRESS BACKUP
+# EXAM CONFIGS & UTILS
 # ─────────────────────────────────────────────────────────────
 PYQ_FILE = "pyq_data.json"
-# Official-style patterns (checked against 2026 sources). neg = fraction of the marks lost per wrong answer.
-# Patterns change and some sources disagree, so the app lets the user adjust and shows a note per exam.
 EXAM_CONFIG = {
     "SSC CGL": {
         "marks": 2.0, "neg": 0.25, "minutes": 60,
@@ -1405,45 +1466,33 @@ EXAM_CONFIG = {
     "UP Police Constable": {
         "marks": 2.0, "neg": 0.25, "minutes": 120,
         "sections": [("General Knowledge", {"mcq": 38}), ("General Hindi", {"mcq": 37}), ("Numerical Ability", {"mcq": 38}), ("Reasoning", {"mcq": 37})],
-        "note": "150 sawal, 120 min, +2 / −0.5. Sources me farak hai (kuch −0.25 ya negative nahi likhte) — apni notification dekh kar adjust karo.",
+        "note": "150 sawal, 120 min, +2 / −0.5.",
     },
     "UPSC / State PCS": {
         "marks": 2.0, "neg": 1 / 3, "minutes": 120,
         "sections": [("History", {"mcq": 17}), ("Polity", {"mcq": 16}), ("Economy", {"mcq": 16}), ("Geography", {"mcq": 15}), ("Environment", {"mcq": 14}), ("Science & Tech", {"mcq": 11}), ("Current Affairs", {"mcq": 11})],
-        "note": "GS Paper-I jaisa: 100 sawal, 120 min, +2 / −⅓. Subject-wise ginti approximate hai.",
+        "note": "GS Paper-I: 100 sawal, 120 min, +2 / −⅓.",
     },
     "UP CNET (Nursing)": {
         "marks": 1.0, "neg": 0.0, "minutes": 140,
         "sections": [("Physics", {"mcq": 24}), ("Chemistry", {"mcq": 24}), ("Biology", {"mcq": 24}), ("English", {"mcq": 24}), ("Nursing Aptitude", {"mcq": 24})],
-        "note": "2026 bulletin: 120 sawal, 140 min, +1, koi negative marking nahi.",
+        "note": "120 sawal, 140 min, no negative marking.",
     },
     "NEET UG": {
         "marks": 4.0, "neg": 0.25, "minutes": 180,
         "sections": [("Physics", {"mcq": 45}), ("Chemistry", {"mcq": 45}), ("Botany", {"mcq": 45}), ("Zoology", {"mcq": 45})],
-        "note": "180 sawal (sab compulsory), 180 min, +4 / −1, 720 marks.",
+        "note": "180 sawal, 180 min, +4 / −1.",
     },
     "JEE Main": {
         "marks": 4.0, "neg": 0.25, "minutes": 180,
         "sections": [("Physics", {"mcq": 20, "num": 5}), ("Chemistry", {"mcq": 20, "num": 5}), ("Mathematics", {"mcq": 20, "num": 5})],
-        "note": "Paper-1: 75 sawal (har subject me 20 MCQ + 5 numerical), 180 min, +4 / −1, 300 marks. Numerical par negative ko lekar sources me farak hai — neeche toggle se chuno.",
+        "note": "Paper-1: 75 sawal, 180 min, +4 / −1.",
     },
 }
 EXAM_LIST = list(EXAM_CONFIG) + ["General All Exams"]
 EXAM_SUBJECTS = {k: [name for name, _ in v["sections"]] for k, v in EXAM_CONFIG.items()}
 EXAM_SUBJECTS["General All Exams"] = ["Mixed"]
 NEG_CHOICES = {"Official": None, "Koi negative nahi": 0.0, "¼": 0.25, "⅓": 1 / 3, "½": 0.5, "Full (−1x)": 1.0}
-PYQ_TEMPLATE = json.dumps(
-    [
-        {"exam": "SSC CGL", "subject": "General Awareness", "year": "2022", "question": "SAMPLE (replace me): Which planet is known as the Red Planet?",
-         "options": ["Venus", "Mars", "Jupiter", "Saturn"], "answer": "Mars", "explanation": "Mars looks red due to iron oxide."},
-        {"exam": "SSC CGL", "subject": "Quantitative Aptitude", "year": "2021", "question": "SAMPLE (replace me): 15% of 200 = ?",
-         "options": ["20", "25", "30", "35"], "answer": "C", "explanation": "0.15 x 200 = 30. 'answer' can be the option text or its letter A-D."},
-        {"exam": "JEE Main", "subject": "Physics", "year": "2023", "type": "num", "question": "SAMPLE (replace me): A body of mass 2 kg moves at 3 m/s. Its kinetic energy (in J) is?",
-         "answer": "9", "explanation": "KE = 1/2 x 2 x 9 = 9 J. For numerical questions use type 'num' and a number as answer."},
-    ],
-    ensure_ascii=False,
-    indent=2,
-)
 
 
 def normalize_pyq(items):
@@ -1492,7 +1541,6 @@ def _load_pyq_file(path, mtime):
 
 
 def load_pyq_dataset(exam=None):
-    """PYQs from pyq_data.json + the shared bank (database) + this session's uploads, de-duplicated."""
     base = _load_pyq_file(PYQ_FILE, os.path.getmtime(PYQ_FILE)) if os.path.exists(PYQ_FILE) else []
     bank = db_load_bank(exam) if exam else []
     out, seen = [], set()
@@ -1550,13 +1598,11 @@ def pyq_to_item(x):
 
 
 def pick_from_pool(pool, n, exclude):
-    """exclude = set of qhash() values that must not be picked again."""
     fresh = [x for x in pool if qhash(x["question"]) not in exclude]
     return [pyq_to_item(x) for x in random.sample(fresh, min(n, len(fresh)))]
 
 
 def more_questions(n, avoid_texts):
-    """Next n questions for the running quiz: unseen real PYQs first (if any), then AI for the rest (only if allowed)."""
     m = st.session_state.meta
     tkey = m.get("tkey")
     seen_h = set(get_seen_hashes(tkey)) | {qhash(t) for t in avoid_texts}
@@ -1573,70 +1619,6 @@ def more_questions(n, avoid_texts):
     return got
 
 
-HIST_KEYS = ("time", "topic", "difficulty", "score", "total", "marks", "max", "acc", "pct")
-
-
-def restore_progress(data):
-    ss = st.session_state
-    if not isinstance(data, dict):
-        raise ValueError("File ka format galat hai.")
-    hist = []
-    for h in data.get("history", []):
-        if isinstance(h, dict) and all(k in h for k in HIST_KEYS):
-            try:
-                hist.append(
-                    {
-                        "time": str(h["time"]), "topic": str(h["topic"]), "difficulty": str(h["difficulty"]),
-                        "score": int(h["score"]), "total": max(1, int(h["total"])), "marks": float(h["marks"]),
-                        "max": float(h["max"]), "acc": int(h["acc"]), "pct": int(h["pct"]),
-                    }
-                )
-            except Exception:
-                continue
-    bms = validate_and_shuffle(data.get("bookmarks", []), 2, False)
-    ss.total_xp = max(0, int(data.get("xp", 0)))
-    ss.history = hist[-200:]
-    ss.bookmarks = {b["question"]: b for b in bms}
-    return len(ss.history), len(ss.bookmarks)
-
-
-def extend_quiz(n):
-    """Append n fresh questions (no repeats) to the current quiz and resume from the first new one.
-    Scores, accuracy, XP and history are recomputed for the whole quiz when it is finished again."""
-    ss = st.session_state
-    m = ss.meta
-    new = more_questions(n, [q["question"] for q in ss.quiz])
-    if not new:
-        return 0
-
-    # undo the previous "finish" so the extended quiz is counted once, as a whole
-    if ss.result:
-        ss.total_xp = max(0, ss.total_xp - ss.result["xp"])
-        if ss.history:
-            db_undo_result(ss.history.pop().get("id"))
-
-    # whole-quiz timer: give the new batch its own proportional budget
-    if m.get("quiz_limit"):
-        per_q = m.get("quiz_per_q") or m["quiz_limit"] / max(len(ss.quiz), 1)
-        m["quiz_per_q"] = per_q
-        m["quiz_limit"] = max(30, round(per_q * len(new)))
-
-    ss.elapsed_before += (ss.end_time or time.time()) - (ss.start_time or time.time())
-    ss.start_time = time.time()
-    start = len(ss.quiz)
-    ss.quiz.extend(new)
-    mark_seen(m.get("tkey"), new)
-    ss.idx = start
-    ss.result = None
-    ss.end_time = None
-    ss.celebrated = False
-    ss.study_plan = ""
-    ss.quiz_time_up = False
-    ss.q_key = None
-    ss.stage = "quiz"
-    return len(new)
-
-
 def reset_all():
     st.session_state.update(fresh_run_state())
     st.session_state.stage = "setup"
@@ -1646,9 +1628,9 @@ def read_pdf(file, start_page, end_page):
     reader = PdfReader(file)
     text = ""
     for p in reader.pages[start_page - 1 : end_page]:
-        t = p.extract_text()
-        if t:
-            text += t + "\n"
+        t_p = p.extract_text()
+        if t_p:
+            text += t_p + "\n"
     return text, len(reader.pages)
 
 
@@ -1663,22 +1645,22 @@ def toggle_bookmark(q):
 
 
 def current_choice(q, qid, i):
-    s, t = st.session_state, q["type"]
-    if t in ("mcq", "tf"):
+    s, t_q = st.session_state, q["type"]
+    if t_q in ("mcq", "tf"):
         return s.get(f"radio_{qid}_{i}")
-    if t == "multi":
+    if t_q == "multi":
         return [o for n, o in enumerate(q["options"]) if s.get(f"cb_{qid}_{i}_{n}")]
-    if t in ("blank", "num"):
+    if t_q in ("blank", "num"):
         return s.get(f"txt_{qid}_{i}")
     return s.get(f"ta_{qid}_{i}")
 
 
 def answer_widget(q, qid, i, locked, prev):
-    t = q["type"]
-    if t in ("mcq", "tf"):
+    t_q = q["type"]
+    if t_q in ("mcq", "tf"):
         idx = q["options"].index(prev) if prev in q["options"] else None
         return st.radio("Apna answer chuno", q["options"], index=idx, key=f"radio_{qid}_{i}", disabled=locked, label_visibility="collapsed")
-    if t == "multi":
+    if t_q == "multi":
         st.caption("Ek se zyada sahi options chuno")
         chosen = set(prev or [])
         sel = []
@@ -1686,9 +1668,9 @@ def answer_widget(q, qid, i, locked, prev):
             if st.checkbox(o, value=(o in chosen), key=f"cb_{qid}_{i}_{n}", disabled=locked):
                 sel.append(o)
         return sel
-    if t == "num":
+    if t_q == "num":
         return st.text_input("Numerical answer", value=prev or "", key=f"txt_{qid}_{i}", disabled=locked, placeholder="Sirf number likho, jaise 12.5")
-    if t == "blank":
+    if t_q == "blank":
         return st.text_input("Khali jagah bharo", value=prev or "", key=f"txt_{qid}_{i}", disabled=locked, placeholder="Apna answer type karo…")
     return st.text_area("Apna answer likho (1-3 line)", value=prev or "", key=f"ta_{qid}_{i}", height=120, disabled=locked)
 
@@ -1719,25 +1701,23 @@ def build_report_html():
         ok = is_correct(i)
         rows += (
             f"<tr><td>{i + 1}</td><td>{esc(q['question'])}</td><td>{esc(user_text(i))}</td>"
-            f"<td>{esc(correct_text(q))}</td><td style='color:{'#1FA67A' if ok else '#E5484D'}'>{'✔' if ok else '✘'}</td>"
+            f"<td>{esc(correct_text(q))}</td><td style='color:{'#1FA67A' if ok else '#E5484D'}'>{'✔' if ok else 'x'}</td>"
             f"<td>{esc(q['explanation'])}</td></tr>"
         )
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>{APP_NAME} Report</title>
 <style>body{{font-family:Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}}
 h1{{color:#4B3FD1}} table{{border-collapse:collapse;width:100%}} td,th{{border:1px solid #ddd;padding:8px;font-size:14px;vertical-align:top}}
-th{{background:#4B3FD1;color:#fff}} .s{{font-size:20px;margin:10px 0}}</style></head><body>
+th{{background:#4B3FD1;color:#fff}}</style></head><body>
 <h1>{APP_NAME} · Result Report</h1>
 <p>{esc(ss.meta.get('label', 'Quiz'))} · {esc(ss.meta.get('difficulty', ''))} · {datetime.now().strftime('%d %b %Y, %H:%M')}</p>
-<p class="s"><b>Marks:</b> {fmt_marks(r['marks'])}/{fmt_marks(r['max_marks'])} &nbsp; <b>Accuracy:</b> {r['accuracy']}% &nbsp; <b>Correct:</b> {r['score']}/{r['total']} &nbsp; <b>XP:</b> {r['xp']} &nbsp; <b>Best streak:</b> {r['best_streak']}</p>
 <table><tr><th>#</th><th>Question</th><th>Your answer</th><th>Correct</th><th></th><th>Explanation</th></tr>{rows}</table>
 </body></html>"""
 
 
 # ─────────────────────────────────────────────────────────────
-# BROWSER LAYER: sound effects, text-to-speech, keyboard shortcuts
-# (a small script is injected once into the parent page)
+# BROWSER JS / AUDIO LAYER
 # ─────────────────────────────────────────────────────────────
-QF_VERSION = 3
+QF_VERSION = 4
 QF_JS = r"""
 (function(){
   var old = window.qf; if (old && old.off) { try { old.off(); } catch(e) {} }
@@ -1805,19 +1785,6 @@ __SOUND__
 __AUTO__
 }catch(e){console.warn('qf',e);}})();</script><!--__NONCE__-->"""
 
-SPEAK_BTN_TEMPLATE = """<style>
-body{margin:0;display:flex;gap:6px;font-family:'Plus Jakarta Sans',Arial,sans-serif}
-button{flex:1;height:40px;border-radius:13px;border:1px solid __LINE__;background:__BG__;color:__FG__;font-weight:700;font-size:14px;cursor:pointer}
-button:hover{border-color:#22D3EE}
-#stop{flex:0 0 44px}
-</style>
-<button id="b" title="Sawal sunao (R)">🔊 Sunao</button><button id="stop" title="Roko">⏹</button>
-<script>
-var T=__TEXT__;
-document.getElementById('b').onclick=function(){var q=window.parent.qf;if(q){q.cur={text:T};q.speakCur();}};
-document.getElementById('stop').onclick=function(){var s=window.parent.speechSynthesis;if(s)s.cancel();};
-</script>"""
-
 
 def render_browser_layer(sound_on, tts_lang, tts_rate, auto_read):
     ss = st.session_state
@@ -1851,14 +1818,12 @@ def speak_button(text):
         if LIGHT
         else {"__LINE__": "rgba(255,255,255,.14)", "__BG__": "rgba(255,255,255,.07)", "__FG__": "#E8EAF6"}
     )
-    code = SPEAK_BTN_TEMPLATE.replace("__TEXT__", json.dumps(text))
-    for k, v in colors.items():
-        code = code.replace(k, v)
+    code = f"""<button style="width:100%;height:40px;border-radius:12px;border:1px solid {colors['__LINE__']};background:{colors['__BG__']};color:{colors['__FG__']};font-weight:700;cursor:pointer" onclick="window.parent.qf.speak({json.dumps(text)})">🔊 {t('listen_btn')}</button>"""
     components.html(code, height=42)
 
 
 # ─────────────────────────────────────────────────────────────
-# COUNTDOWN (auto-refreshing fragment, Streamlit ≥ 1.37)
+# COUNTDOWN FRAGMENTS
 # ─────────────────────────────────────────────────────────────
 def _countdown(limit, qid, i, total, instant):
     ss = st.session_state
@@ -1887,7 +1852,7 @@ def _quiz_countdown(total_secs, qid, i):
     left = total_secs - (time.time() - ss.start_time)
     if left > 0:
         m, sec = divmod(math.ceil(left), 60)
-        st.progress(max(left / total_secs, 0.0), text=f"⏳ Quiz ka time bacha: {m:02d}:{sec:02d}")
+        st.progress(max(left / total_secs, 0.0), text=f"⏳ Time: {m:02d}:{sec:02d}")
         return
     q = ss.quiz[i]
     if not ss.locked.get(i):
@@ -1903,146 +1868,107 @@ countdown = _fragment(run_every=1)(_countdown) if _fragment else None
 quiz_countdown = _fragment(run_every=1)(_quiz_countdown) if _fragment else None
 
 # ─────────────────────────────────────────────────────────────
-# LOGIN GATE
+# AUTH GATE
 # ─────────────────────────────────────────────────────────────
 CM = ensure_auth()
 
 # ─────────────────────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR NAVIGATION & GLOBAL SETTINGS
 # ─────────────────────────────────────────────────────────────
 with st.sidebar:
-    lvl = level_of(st.session_state.total_xp)
-    st.markdown(f"### 🎖️ Level {lvl}")
-    st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
-
-    st.markdown("### ⚙️ Quiz Settings")
-    num_questions = st.slider("Questions", 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
-    difficulty = st.select_slider("Difficulty", ["Easy", "Medium", "Hard"], value="Medium")
-    adaptive = st.toggle("🎚️ Adaptive difficulty", value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
-    type_sel = st.multiselect("Question types", list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
-    type_keys = [TYPE_MAP[x] for x in type_sel] or ["mcq"]
-    language = st.selectbox("Language", ["English", "Hinglish", "Hindi"])
-    mode = st.radio(
-        "Mode",
-        ["Practice", "Exam", "Survival"],
-        help="Practice: har sawal ke baad turant answer.\nExam: result end me.\nSurvival: sirf 3 lives — 3 galat answer par game over!",
+    # GLOBAL APP LANGUAGE TOGGLE
+    st.markdown("### 🌐 Global Interface")
+    app_lang = st.selectbox(
+        t("app_lang"),
+        ["Hinglish", "English", "Hindi"],
+        index=["Hinglish", "English", "Hindi"].index(st.session_state.get("app_lang", "Hinglish")),
+        key="app_lang_select",
     )
-    st.markdown("**⏱️ Timer**")
-    timer_mode = st.selectbox("Timer type", ["Off", "Har sawal par", "Poore quiz ka"], label_visibility="collapsed")
+    st.session_state["app_lang"] = app_lang
+
+    st.divider()
+
+    lvl = level_of(st.session_state.total_xp)
+    st.markdown(f"### 🎖️ {t('level')} {lvl}")
+    st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · Next Level {100 - st.session_state.total_xp % 100}")
+
+    st.markdown(f"### {t('settings')}")
+    num_questions = st.slider(t("questions_count"), 3, 50, 5)
+    difficulty = st.select_slider(t("difficulty"), ["Easy", "Medium", "Hard"], value="Medium")
+    adaptive = st.toggle(t("adaptive"), value=False)
+    type_sel = st.multiselect(t("q_types"), list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
+    type_keys = [TYPE_MAP[x] for x in type_sel] or ["mcq"]
+    language = st.selectbox("AI Content Language", ["English", "Hinglish", "Hindi"])
+    mode = st.radio(t("mode"), ["Practice", "Exam", "Survival"])
+
+    st.markdown(f"**{t('timer')}**")
+    timer_mode = st.selectbox("Timer", ["Off", "Har sawal par", "Poore quiz ka"], label_visibility="collapsed")
     time_limit = quiz_limit = 0
     if timer_mode == "Har sawal par":
-        pick = st.selectbox("Seconds per sawal", [10, 15, 20, 30, 45, 60, 90, 120, "Custom"], index=3)
-        time_limit = int(st.number_input("Custom seconds", 5, 600, 30, 5)) if pick == "Custom" else int(pick)
-        st.caption("Time khatam hote hi answer auto-submit ho jata hai.")
+        pick = st.selectbox("Seconds", [10, 15, 20, 30, 45, 60, 90, 120, "Custom"], index=3)
+        time_limit = int(st.number_input("Custom Sec", 5, 600, 30, 5)) if pick == "Custom" else int(pick)
     elif timer_mode == "Poore quiz ka":
-        pick = st.selectbox("Minutes (poore quiz ke)", [5, 10, 15, 20, 30, 45, 60, 90, "Custom"], index=1)
-        mins = int(st.number_input("Custom minutes", 1, 180, 10, 1)) if pick == "Custom" else int(pick)
+        pick = st.selectbox("Minutes", [5, 10, 15, 20, 30, 45, 60, 90, "Custom"], index=1)
+        mins = int(st.number_input("Custom Min", 1, 180, 10, 1)) if pick == "Custom" else int(pick)
         quiz_limit = mins * 60
-        st.caption(f"≈ {quiz_limit / max(num_questions, 1):.0f} sec per sawal. Time khatam to quiz apne aap submit.")
-    if (time_limit or quiz_limit) and countdown is None:
-        st.warning("Timer ke liye Streamlit ≥ 1.37 chahiye.")
 
-    st.markdown("**🎯 Marking**")
-    marks_correct = float(st.selectbox("Marks per sahi answer", [1, 2, 4, 5], index=0))
-    neg_label = st.selectbox(
-        "Negative marking (galat par)",
-        ["Nahi", "¼ (−0.25)", "⅓ (−0.33)", "½ (−0.5)", "Full (−1)"],
-        help="Galat answer par sahi-marks ka itna hissa katega. Skip par 0. Short answer me partial marks milte hain, negative nahi.",
-    )
+    st.markdown(f"**{t('marking')}**")
+    marks_correct = float(st.selectbox("Marks for Correct", [1, 2, 4, 5], index=0))
+    neg_label = st.selectbox("Negative Marking", ["Nahi", "¼ (−0.25)", "⅓ (−0.33)", "½ (−0.5)", "Full (−1)"])
     neg_frac = {"Nahi": 0.0, "¼ (−0.25)": 0.25, "⅓ (−0.33)": 1 / 3, "½ (−0.5)": 0.5, "Full (−1)": 1.0}[neg_label]
-    st.caption(f"+{fmt_marks(marks_correct)} sahi · −{fmt_marks(marks_correct * neg_frac)} galat · 0 skip")
 
-    with st.expander("🔊 Awaaz & Look"):
-        sound_on = st.toggle("Sound effects", value=True, key="sound_on")
-        auto_read = st.toggle("Sawal khud padhkar sunao", value=False, key="auto_read", help="Agar awaaz na aaye to pehle page par ek click karo ya 🔊 button dabao.")
-        tts_rate = st.slider("Bolne ki speed", 0.6, 1.4, 1.0, 0.1, key="tts_rate")
-        st.toggle("☀️ Light mode", value=False, key="light")
-    with st.expander("Advanced"):
-        model = st.selectbox("AI model", MODELS, help="120b = sabse accurate. 8b-instant = sabse fast.")
+    with st.expander("🔊 Audio & Theme"):
+        sound_on = st.toggle("Sound Effects", value=True, key="sound_on")
+        auto_read = st.toggle("Auto Read Question", value=False, key="auto_read")
+        tts_rate = st.slider("Speech Rate", 0.6, 1.4, 1.0, 0.1, key="tts_rate")
+        st.toggle("☀️ Light Mode", value=False, key="light")
+
+    with st.expander("Advanced AI"):
+        model = st.selectbox("Groq Model", MODELS)
 
     st.divider()
     nb = len(st.session_state.bookmarks)
-    st.markdown("### 🔖 Saved questions")
+    st.markdown(f"### {t('saved_questions')}")
     if nb:
-        st.caption(f"{nb} question(s) saved")
-        if st.session_state.stage != "quiz" and st.button("📇 Flashcards se padho", use_container_width=True):
+        st.caption(f"{nb} saved")
+        if st.session_state.stage != "quiz" and st.button(f"📇 {t('flashcards_btn')}", use_container_width=True):
             st.session_state.flash_cards = list(st.session_state.bookmarks.values())
             st.session_state.flash_i = 0
             st.session_state.flash_show = False
             st.session_state.flash_return = st.session_state.stage
             st.session_state.stage = "flash"
             st.rerun()
-    else:
-        st.caption("Quiz ke dauran 🔖 dabao, sawal yahan save ho jayega.")
 
     st.divider()
-    st.markdown("### 🏆 Meri History")
+    st.markdown(f"### {t('my_history')}")
     if st.session_state.history:
-        for h in reversed(st.session_state.history[-6:]):
-            st.markdown(
-                f"**{esc(h['topic'])[:28]}**  \n{fmt_marks(h['marks'])}/{fmt_marks(h['max'])} marks · {h['acc']}% acc · {h['difficulty']}  \n"
-                f"<small style='opacity:.6'>{h['time']}</small>",
-                unsafe_allow_html=True,
-            )
-        st.caption(f"⭐ Best score: {max(h['pct'] for h in st.session_state.history)}%")
-        if st.button("Clear history"):
-            db_clear_history()
-            st.session_state.history = []
-            st.rerun()
+        for h in reversed(st.session_state.history[-5:]):
+            st.markdown(f"**{esc(h['topic'])[:25]}** · {fmt_marks(h['marks'])}/{fmt_marks(h['max'])} marks")
     else:
-        st.caption("Abhi koi quiz nahi diya. Pehla quiz banao!")
+        st.caption("No history yet.")
 
     st.divider()
     if AUTH_ENABLED and st.session_state.get("user"):
         _u = st.session_state["user"]
-        st.markdown("### 👤 Account")
+        st.markdown(f"### {t('account')}")
         st.caption(_u.get("email") or _u.get("phone") or "Logged in")
-        if st.session_state.get("is_admin"):
-            st.caption("🛠️ Admin — PYQ bank me sawal jod sakte ho")
-        if st.session_state.get("_db_err"):
-            st.warning("Database me save karne me dikkat aayi. Supabase SQL / keys check karo.")
-            st.caption(st.session_state["_db_err"])
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button(t("logout"), use_container_width=True):
             do_logout(CM)
-    else:
-        if not AUTH_CONFIGURED:
-            st.caption("Guest mode: login/database abhi set nahi hai, isliye history browser band hote hi chali jayegi.")
-        st.markdown("### 💾 Progress backup")
-        st.caption("Apna XP, history aur saved questions file me save karo aur kabhi bhi wapas load karo.")
-        _backup = json.dumps(
-            {"v": 1, "xp": st.session_state.total_xp, "history": st.session_state.history, "bookmarks": list(st.session_state.bookmarks.values())},
-            ensure_ascii=False,
-        )
-        st.download_button("⬇️ Progress save karo", _backup.encode("utf-8"), file_name="quiz_progress.json", mime="application/json", use_container_width=True)
-        _up = st.file_uploader("Progress load karo", type=["json"], key="prog_up")
-        if _up is not None:
-            _sig = (_up.name, _up.size)
-            if st.session_state.get("_prog_sig") != _sig:
-                try:
-                    _nh, _nb = restore_progress(json.loads(_up.getvalue().decode("utf-8-sig")))
-                    st.session_state["_prog_sig"] = _sig
-                    st.session_state["_prog_msg"] = f"✅ {_nh} quiz history aur {_nb} saved sawal wapas aa gaye."
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Load nahi hua: {e}")
-        if st.session_state.get("_prog_msg"):
-            st.success(st.session_state["_prog_msg"])
 
 # ─────────────────────────────────────────────────────────────
-# HERO
+# MAIN HERO HEADER
 # ─────────────────────────────────────────────────────────────
 _order = {"setup": 0, "quiz": 1, "result": 2}
 _cur = _order.get(st.session_state.stage, -1)
-_steps = ""
-for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
-    cls = "on" if n == _cur else ("done" if 0 <= _cur and n < _cur else "")
-    _steps += f"<span class='qf-step {cls}'>{n + 1} · {name}</span>"
+_steps = f"<span class='qf-step {'on' if _cur==0 else 'done'}'>{t('step_1')}</span>"
+_steps += f"<span class='qf-step {'on' if _cur==1 else ('done' if _cur>1 else '')}'>{t('step_2')}</span>"
+_steps += f"<span class='qf-step {'on' if _cur==2 else ''}'>{t('step_3')}</span>"
 
 st.markdown(
     f"""
 <div class="qf-hero">
   <div class="qf-title qf-display">{APP_NAME}</div>
-  <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
+  <div class="qf-sub">{t('hero_sub')}</div>
   <div class="qf-steps">{_steps}</div>
 </div>
 """,
@@ -2050,488 +1976,17 @@ st.markdown(
 )
 
 # ═════════════════════════════════════════════════════════════
-# STAGE · SETUP
-# ═════════════════════════════════════════════════════════════
-def base_meta(cfg, label, source, media=None, **extra):
-    m = {
-        "label": label, "difficulty": cfg["difficulty"], "mode": cfg["mode"], "source": source, "media": media,
-        "types": cfg["type_keys"], "adaptive": cfg["adaptive"], "language": cfg["language"], "model": cfg["model"],
-        "time_limit": cfg["time_limit"], "quiz_limit": cfg["quiz_limit"], "marks": cfg["marks"], "neg": cfg["neg"],
-    }
-    m.update(extra)
-    return m
-
-
-def launch_quiz(input_text, label, cfg, media=None):
-    with st.spinner("AI sawal bana raha hai…"):
-        try:
-            if input_text.startswith("Topic:"):
-                ident = label
-            elif media:
-                ident = f"{label}|{hashlib.md5(media['bytes']).hexdigest()[:8]}"
-            else:
-                ident = f"{label}|{qhash(input_text[:2000])[:8]}"
-            tkey = topic_key_for("ai", ident)
-            quiz = generate_with_progress(
-                input_text, cfg["num_questions"], cfg["difficulty"], cfg["type_keys"], cfg["language"], cfg["model"],
-                media=media, adaptive=cfg["adaptive"], avoid=get_seen_questions(tkey),
-            )
-            if not quiz:
-                st.error("Valid sawal nahi ban paye. Dobara try karo.")
-                return
-            start_quiz(quiz, base_meta(cfg, label, input_text, media, tkey=tkey))
-            st.session_state["_picked"] = ""
-            st.rerun()
-        except json.JSONDecodeError:
-            st.error("AI ka response samajh nahi aaya. Dobara try karo ya doosra model chuno.")
-        except Exception as e:
-            st.error(friendly_error(e))
-
-
-# ── TAB 1 · QUIZ ARENA ───────────────────────────────────────
-def render_quiz_tab(cfg):
-    with st.container(key="srcpick"):
-        source = st.radio("Content kahan se aayega?", ["💡 Topic", "📄 PDF", "🖼️ Photo / Camera", "📝 Notes"], horizontal=True)
-
-    input_text, label, media = "", "", None
-
-    with st.container(key="panel"):
-        if source.startswith("💡"):
-            topic = st.text_input("Kis topic par quiz chahiye?", placeholder="e.g. Machine Learning basics, Indian Constitution, Python lists…")
-            st.caption("Quick picks")
-            cols = st.columns(4)
-            for c, pick in zip(cols, ["Python Basics", "World History", "Human Biology", "Indian Economy"]):
-                if c.button(pick, use_container_width=True, key=f"pick_{pick}"):
-                    st.session_state["_picked"] = pick
-                    st.rerun()
-            if st.session_state.get("_picked") and not topic:
-                topic = st.session_state["_picked"]
-                st.info(f"Selected topic: **{topic}**")
-            if topic.strip():
-                input_text = f"Topic: {topic.strip()}\nUse your own knowledge to cover this topic accurately."
-                label = topic.strip()
-
-        elif source.startswith("📄"):
-            up = st.file_uploader("PDF upload karo", type=["pdf"])
-            if up is not None:
-                try:
-                    _, total_pages = read_pdf(up, 1, 1)
-                    up.seek(0)
-                    rng = st.slider("Page range", 1, total_pages, (1, min(total_pages, 10))) if total_pages > 1 else (1, 1)
-                    pdf_text, _ = read_pdf(up, rng[0], rng[1])
-                    if pdf_text.strip():
-                        st.success(f"✅ {rng[1] - rng[0] + 1} page(s) padhe · {len(pdf_text):,} characters")
-                        if len(pdf_text) > MAX_CHARS:
-                            st.warning(f"Text lamba hai — pehle {MAX_CHARS:,} characters use honge. Page range chhota karo.")
-                        input_text, label = pdf_text, f"PDF: {up.name}"
-                    else:
-                        st.error("Is PDF se text nahi nikla (scanned lagta hai). Uske page ki **photo** lekar try karo.")
-                except Exception as e:
-                    st.error(f"PDF read nahi ho paya: {e}")
-
-        elif source.startswith("🖼️"):
-            st.caption("Photo upload karo ya camera se seedha click karo.")
-            photo_mode = st.radio("Photo mode", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="quiz_photo_mode")
-            mf = (
-                st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="media_up")
-                if photo_mode == "📁 Upload File"
-                else st.camera_input("Live photo click karo", key="quiz_cam")
-            )
-            if mf is not None:
-                raw = mf.getvalue()
-                if len(raw) > MAX_RAW_IMG_BYTES:
-                    st.error("Photo 15 MB se badi hai. Chhoti photo use karo.")
-                else:
-                    data, mime = prepare_image(raw, getattr(mf, "type", None) or "image/jpeg")
-                    if len(data) > MAX_IMG_BYTES:
-                        st.error("Photo compress hone ke baad bhi bahut badi hai. Kam resolution ki photo lo.")
-                    else:
-                        st.image(data, caption="Selected photo", use_container_width=True)
-                        media = {"bytes": data, "mime": mime}
-                        input_text, label = "(attached image)", f"Photo: {getattr(mf, 'name', 'Camera picture')}"
-
-        else:
-            pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
-            if pasted.strip():
-                st.caption(f"{len(pasted):,} characters")
-                input_text, label = pasted, "Pasted notes"
-
-    st.write("")
-    if st.button("✨ Quiz banao", type="primary", use_container_width=True):
-        if not input_text.strip():
-            st.warning("Pehle topic likho, photo upload/click karo ya notes paste karo.")
-        else:
-            launch_quiz(input_text, label, cfg, media)
-
-
-# ── TAB 2 · GOVT & ENTRANCE EXAMS ───────────────────────────
-def plan_sections(conf, n_total, subject, mock, factor):
-    """Return [(subject, qtype, count)] following the exam's section pattern."""
-    secs = conf["sections"] if conf else [("Mixed", {"mcq": 1})]
-    if subject != "All subjects":
-        secs = [x for x in secs if x[0] == subject] or [(subject, {"mcq": 1})]
-    entries = [(subj, t, cnt) for subj, mix in secs for t, cnt in mix.items()]
-    if mock:
-        return [(subj, t, max(1, round(cnt * factor))) for subj, t, cnt in entries]
-    total_w = sum(c for _, _, c in entries) or 1
-    raw = [n_total * c / total_w for _, _, c in entries]
-    alloc = [int(x) for x in raw]
-    for k in sorted(range(len(raw)), key=lambda k: raw[k] - alloc[k], reverse=True)[: n_total - sum(alloc)]:
-        alloc[k] += 1
-    return [(subj, t, a) for (subj, t, _), a in zip(entries, alloc) if a > 0]
-
-
-def build_pyq_quiz(exam, cfg, pool, fill_ai, plan):
-    quiz, notes = [], []
-    for subj, t, n in plan:
-        sec_pool = [x for x in pool if x.get("type", "mcq") == t and (subj == "Mixed" or x["subject"].strip().lower() == subj.lower())]
-        taken = {qhash(q["question"]) for q in quiz}
-        got = pick_from_pool(sec_pool, n, taken)
-        need = n - len(got)
-        if need > 0 and (fill_ai or not pool):
-            subj_txt = "mixed subjects of the syllabus" if subj == "Mixed" else subj
-            src = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
-            if t == "num":
-                src += " The answer of every question must be a single number."
-            try:
-                got += generate_with_progress(
-                    src, need, cfg["difficulty"], [t], cfg["language"], cfg["model"],
-                    avoid=[q["question"] for q in quiz] + [g["question"] for g in got], adaptive=False, exam=f"{exam} · {subj}",
-                )
-            except Exception as e:
-                notes.append(f"{subj}: AI se baaki sawal nahi ban paye ({friendly_error(e)})")
-                for g in got:
-                    g["topic"] = subj[:30]
-                quiz += got
-                break
-        for g in got:
-            g["topic"] = subj[:30]  # subject-wise analytics
-        quiz += got
-    return quiz, notes
-
-
-def render_pyq_tab(cfg):
-    ss = st.session_state
-    st.markdown("### 🏛️ Govt & Entrance Exam — PYQ Practice")
-    st.caption(
-        "Yahan **pichhle saalon ke asli sawal (PYQ)** aate hain, PYQ bank se (📜 tag ke saath). "
-        "Jo PYQ tum pehle kar chuke ho wo dobara nahi aate. Marking har exam ke hisaab se lagti hai."
-    )
-
-    with st.container(key="panel_pyq"):
-        exam = st.selectbox("Target exam", EXAM_LIST, key="pyq_exam")
-        conf = EXAM_CONFIG.get(exam)
-        dataset = load_pyq_dataset(exam)
-        known = sorted({q["subject"] for q in dataset})
-        base_subjects = EXAM_SUBJECTS.get(exam, [])
-        subjects = ["All subjects"] + base_subjects + [k for k in known if k not in base_subjects]
-        subject = st.selectbox("Subject", subjects, key=f"pyq_subject_{exam}")
-        pool_all = [q for q in dataset if subject == "All subjects" or q["subject"].strip().lower() == subject.lower()]
-        years = sorted({q["year"] for q in pool_all if q["year"]}, reverse=True)
-        sel_years = st.multiselect("Year (optional)", years, key=f"pyq_years_{exam}_{subject}") if years else []
-        pool = [q for q in pool_all if not sel_years or q["year"] in sel_years]
-
-        tkey = f"pyq::{exam}"
-        seen_h = get_seen_hashes(tkey)
-        fresh_pool = [q for q in pool if qhash(q["question"]) not in seen_h]
-        if not dataset:
-            st.error(f"PYQ bank me **{exam}** ke sawal abhi nahi hain. Admin se PYQ upload karwao (neeche 'PYQ bank' wala box dekho).")
-        elif not pool:
-            st.info("Is subject/year ke liye PYQ nahi mile. Filter badlo.")
-        elif not fresh_pool:
-            st.warning(f"Tum is filter ke saare {len(pool)} PYQ kar chuke ho.")
-            if st.button("🔁 Seen list reset karo (PYQ phir se aayenge)", key="pyq_reset_seen"):
-                reset_seen(tkey)
-                st.rerun()
-        else:
-            st.success(f"✅ {len(fresh_pool)} naye PYQ available ({len(pool) - len(fresh_pool)} tum pehle kar chuke ho).")
-        fill_ai = st.toggle(
-            "PYQ kam pade to AI practice sawal se bharo (ye asli PYQ nahi hote)", value=False, key=f"pyq_fill_{exam}",
-            help="Band rakhoge to sirf asli PYQ aayenge — kam hue to kam sawal milenge.",
-        )
-
-        # ── marking scheme ──
-        official, neg_override, num_neg = False, None, True
-        if conf:
-            official = st.radio("Marking scheme", ["📋 Official (exam jaisi)", "⚙️ Sidebar wali"], horizontal=True, key=f"pyq_mark_{exam}").startswith("📋")
-            if official:
-                st.caption(f"+{fmt_marks(conf['marks'])} sahi · −{fmt_marks(conf['marks'] * conf['neg'])} galat · 0 unattempted. {conf['note']}")
-                with st.expander("Notification me alag ho to marking adjust karo"):
-                    neg_override = NEG_CHOICES[st.selectbox("Negative marking", list(NEG_CHOICES), key=f"pyq_neg_{exam}")]
-                    if any("num" in mix for _, mix in conf["sections"]):
-                        num_neg = st.toggle("Numerical questions par bhi negative lagao", value=True, key=f"pyq_numneg_{exam}")
-        else:
-            st.caption("Is option me sidebar wali marking lagegi.")
-
-        # ── mock pattern ──
-        use_pattern, factor = False, 1.0
-        if conf:
-            use_pattern = st.toggle("📝 Full mock test (exam jaisa pattern + timer)", key=f"pyq_pattern_{exam}")
-            if use_pattern:
-                size = st.radio("Mock size", ["Full", "Half (50%)", "Quarter (25%)"], horizontal=True, key=f"pyq_size_{exam}")
-                factor = 1.0 if size == "Full" else (0.5 if size.startswith("Half") else 0.25)
-
-    # resolved marking + plan
-    if conf and official:
-        marks_used = conf["marks"]
-        neg_used = conf["neg"] if neg_override is None else neg_override
-        no_neg = ["num"] if (any("num" in mix for _, mix in conf["sections"]) and not num_neg) else []
-    else:
-        marks_used, neg_used, no_neg = cfg["marks"], cfg["neg"], []
-    plan = plan_sections(conf, cfg["num_questions"], subject, use_pattern, factor)
-    plan_n = sum(n for _, _, n in plan)
-    full_total = sum(sum(m.values()) for _, m in conf["sections"]) if conf else 0
-
-    if use_pattern:
-        mins_plan = max(5, round(conf["minutes"] * plan_n / full_total)) if full_total else 0
-        st.info(f"🧾 Mock: {plan_n} sawal · {mins_plan} min · max {fmt_marks(plan_n * marks_used)} marks · +{fmt_marks(marks_used)} / −{fmt_marks(marks_used * neg_used)}")
-        if len(fresh_pool) < plan_n and not fill_ai:
-            st.caption(f"ℹ️ Abhi {len(fresh_pool)} naye PYQ hain, isliye mock utna hi chhota banega (AI se bharna band hai).")
-    else:
-        st.caption(f"Practice me {min(plan_n, len(fresh_pool)) if not fill_ai else plan_n} sawal aayenge (sidebar ke 'Questions' slider se badlo).")
-
-    with st.expander("📚 PYQ bank / apna dataset jodo (JSON / CSV)"):
-        st.caption(
-            "Har sawal me: exam, subject, year, question, options, answer (text ya A-D), explanation. "
-            "Numerical sawal ke liye `type: num` aur answer me number. "
-            f"`exam` ka naam in me se ek ho: {', '.join(EXAM_LIST)}. "
-            "File ko repo me `pyq_data.json` naam se daaloge to wo hamesha rahegi."
-        )
-        if ss.get("is_admin"):
-            st.success("🛠️ Tum admin ho: upload ke baad 'Shared PYQ bank me save karo' dabao — sawal sabhi users ko milenge.")
-        elif db_on():
-            st.caption("Shared bank me sawal sirf admin jod sakta hai. Neeche upload sirf tumhare is session ke liye hai.")
-        st.download_button("📄 Template (JSON)", PYQ_TEMPLATE.encode("utf-8"), file_name="pyq_template.json", mime="application/json")
-        up = st.file_uploader("PYQ file", type=["json", "csv"], key="pyq_up")
-        if up is not None:
-            sig = (up.name, up.size)
-            if ss.get("_pyq_sig") != sig:
-                try:
-                    items = parse_pyq_upload(up)
-                    have = {bank_hash(q) for q in ss.pyq_uploaded}
-                    fresh = [q for q in items if bank_hash(q) not in have]
-                    ss.pyq_uploaded += fresh
-                    ss["_pyq_items"] = items
-                    ss["_pyq_sig"] = sig
-                    ss["_pyq_msg"] = f"✅ {len(fresh)} sawal jude ({len(items) - len(fresh)} duplicate chhode)."
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"File padh nahi paya: {e}")
-        if ss.get("_pyq_msg"):
-            st.success(ss["_pyq_msg"])
-        if ss.get("is_admin") and ss.get("_pyq_items"):
-            if st.button(f"📤 Shared PYQ bank me save karo ({len(ss['_pyq_items'])} sawal)", key="pyq_bank_save"):
-                try:
-                    st.success(f"✅ {db_save_bank(ss['_pyq_items'])} sawal bank me save/update ho gaye.")
-                    ss["_pyq_items"] = []
-                except Exception as e:
-                    st.error(f"Bank me save nahi hua (admin access / SQL check karo): {e}")
-        if ss.pyq_uploaded:
-            st.caption(f"Is session me {len(ss.pyq_uploaded)} uploaded PYQ hain.")
-            if st.button("🗑️ Uploaded PYQ hatao", key="pyq_clear"):
-                ss.pyq_uploaded = []
-                ss["_pyq_sig"] = None
-                ss["_pyq_msg"] = ""
-                ss["_pyq_items"] = []
-                st.rerun()
-
-    st.write("")
-    can_start = bool(fresh_pool) or fill_ai
-    if st.button(
-        f"🚀 {exam} {'mock test' if use_pattern else 'PYQ practice'} shuru karo", type="primary", use_container_width=True,
-        key="btn_start_pyq", disabled=not can_start,
-    ):
-        label_exam = exam if subject == "All subjects" else f"{exam} · {subject}"
-        subj_txt = "mixed subjects of the syllabus" if subject == "All subjects" else subject
-        src_main = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
-        with st.spinner("Sawal taiyaar ho rahe hain…"):
-            try:
-                quiz, notes = build_pyq_quiz(exam, cfg, fresh_pool, fill_ai, plan)
-            except Exception as e:
-                st.error(friendly_error(e))
-                return
-        if not quiz:
-            st.error("Abhi koi sawal nahi mila. " + " ".join(notes))
-            return
-        if len(quiz) < plan_n:
-            notes.append(f"{plan_n} me se {len(quiz)} sawal hi mile (naye PYQ itne hi the).")
-        if not use_pattern:
-            random.shuffle(quiz)
-        minutes = max(5, round(conf["minutes"] * len(quiz) / full_total)) if (use_pattern and conf and full_total) else 0
-        meta = base_meta(
-            cfg, f"{label_exam} · {'Mock' if use_pattern else 'PYQ'}", src_main, None,
-            types=sorted({t for _, t, _ in plan}), adaptive=False, exam=label_exam, pyq_pool=pool, pyq_fill_ai=fill_ai, tkey=tkey,
-            mode="Exam" if use_pattern else cfg["mode"], marks=marks_used, neg=neg_used, no_neg_types=no_neg,
-            time_limit=0 if use_pattern else cfg["time_limit"], quiz_limit=minutes * 60 if use_pattern else cfg["quiz_limit"],
-            gen_note=" ".join(notes),
-        )
-        start_quiz(quiz, meta)
-        st.rerun()
-
-
-# ── TAB 3 · DOUBT SOLVER (chat with follow-ups) ──────────────
-DEPTH_RULES = {
-    "Step-by-step": "Give a clear step-by-step solution, then a short concept explanation.",
-    "Quick answer": "Give the final answer first in 1-2 lines, then a brief reason (max 5 lines).",
-    "ELI5 (bahut simple)": "Explain like I am 12: very simple words, one everyday analogy, no jargon.",
-    "Exam-ready notes": "Give crisp exam-ready notes: definition, key formulae/points, one example, common mistakes.",
-}
-LANG_RULES = {
-    "Simple English": "very simple, clear English",
-    "Hinglish": "Hinglish (Hindi written in Roman script, mixed with common English words)",
-    "Hindi": "Hindi in Devanagari script",
-}
-
-
-def doubt_system_prompt(lang, depth):
-    return (
-        f"You are a patient, friendly tutor. Answer in {LANG_RULES[lang]}. {DEPTH_RULES[depth]} "
-        "Use Markdown and short sentences; show calculations clearly. If the question is ambiguous or the photo is unreadable, "
-        "say so and state your assumption. End with '**Yaad rakho:**' and 2-3 bullets."
-    )
-
-
-def doubt_llm_messages(thread, system_prompt, with_image):
-    msgs = [{"role": "system", "content": system_prompt}]
-    for n, t in enumerate(thread):
-        if n == 0 and t["role"] == "user" and t.get("image"):
-            if with_image:
-                b64 = base64.b64encode(t["image"]["bytes"]).decode()
-                msgs.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": t["content"] or "Solve and explain this question."},
-                            {"type": "image_url", "image_url": {"url": f"data:{t['image']['mime']};base64,{b64}"}},
-                        ],
-                    }
-                )
-            else:
-                msgs.append({"role": "user", "content": (t["content"] or "Question from a photo") + " (the photo was shared earlier; see the solution below)"})
-        else:
-            msgs.append({"role": t["role"], "content": t["content"]})
-    return msgs
-
-
-def render_doubt_tab(cfg):
-    ss = st.session_state
-    st.markdown("### 🔍 AI Doubt Solver")
-    st.caption("Doubt poochho (text, photo, camera ya PDF). Jawab word-by-word aata hai, aur tum follow-up sawal bhi pooch sakte ho.")
-    thread = ss.doubt_thread
-
-    if not thread:
-        with st.container(key="panel_doubt"):
-            c1, c2 = st.columns(2)
-            lang_opts = list(LANG_RULES.keys())
-            d_lang = c1.selectbox("Jawab ki bhasha", lang_opts, index={"English": 0, "Hinglish": 1, "Hindi": 2}.get(cfg["language"], 0), key="d_lang")
-            d_depth = c2.selectbox("Style", list(DEPTH_RULES.keys()), key="d_depth")
-            src = st.radio("Doubt kaise poochna hai?", ["📝 Text", "📸 Live Camera", "🖼️ Photo Upload", "📄 PDF"], horizontal=True, key="d_src")
-            q_text, d_media = "", None
-
-            if src.startswith("📝"):
-                q_text = st.text_area("Apna doubt yahan likho", height=140, placeholder="e.g. Binary Search Tree me insertion kaise hota hai? Example ke saath samjhao.", key="d_txt")
-            elif src.startswith("📸") or src.startswith("🖼️"):
-                if src.startswith("📸"):
-                    st.caption("📸 Browser me camera allow karo, question ki saaf photo lo (seedhi, achhi roshni me). Phone me back camera chahiye to browser ka camera-switch use karo.")
-                    d_file = st.camera_input("Question ki live photo click karo", key="d_cam")
-                else:
-                    d_file = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="d_img")
-                if d_file is not None:
-                    raw = d_file.getvalue()
-                    if len(raw) > MAX_RAW_IMG_BYTES:
-                        st.error("Photo 15 MB se badi hai. Chhoti photo use karo.")
-                    else:
-                        data, mime = prepare_image(raw, getattr(d_file, "type", None) or "image/jpeg")
-                        if len(data) > MAX_IMG_BYTES:
-                            st.error("Photo compress hone ke baad bhi bahut badi hai. Kam resolution ki photo lo.")
-                        else:
-                            st.image(data, caption="Question photo", use_container_width=True)
-                            d_media = {"bytes": data, "mime": mime}
-                q_text = st.text_input("Koi extra instruction? (optional)", placeholder="e.g. Sirf Q3 solve karo", key="d_img_txt")
-            else:
-                d_pdf = st.file_uploader("PDF upload karo", type=["pdf"], key="d_pdf")
-                extra = st.text_input("PDF me se kya poochna hai?", placeholder="e.g. Is chapter ka summary do", key="d_pdf_txt")
-                if d_pdf is not None:
-                    try:
-                        pdf_text, _ = read_pdf(d_pdf, 1, 5)
-                        if pdf_text.strip():
-                            st.success("PDF ke pehle 5 pages load ho gaye.")
-                            q_text = f"Document text:\n{pdf_text[:MAX_CHARS]}\n\nRequest: {extra or 'Explain the key ideas simply.'}"
-                        else:
-                            st.error("PDF se text nahi nikla. Page ki photo upload karo.")
-                    except Exception as e:
-                        st.error(f"PDF read error: {e}")
-
-        st.write("")
-        if st.button("💡 Samjhao", type="primary", use_container_width=True, key="btn_solve_doubt"):
-            if not q_text.strip() and not d_media:
-                st.warning("Pehle doubt likho ya photo do.")
-            else:
-                ss.doubt_thread = [{"role": "user", "content": q_text.strip(), "image": d_media}]
-                ss.doubt_opts = {"lang": d_lang, "depth": d_depth}
-                ss.doubt_pending = True
-                st.rerun()
-        return
-
-    # ── conversation view ──
-    for t in thread:
-        with st.chat_message(t["role"]):
-            if t.get("image"):
-                st.image(t["image"]["bytes"], width=280)
-            st.markdown(t["content"] or "📷 *Photo se doubt*")
-
-    opts = ss.doubt_opts or {"lang": "Simple English", "depth": "Step-by-step"}
-    if ss.doubt_pending:
-        use_vision = len(thread) == 1 and bool(thread[0].get("image"))
-        msgs = doubt_llm_messages(thread, doubt_system_prompt(opts["lang"], opts["depth"]), use_vision)
-        with st.chat_message("assistant"):
-            try:
-                text = st.write_stream(llm_stream(msgs, VISION_MODEL if use_vision else cfg["model"]))
-                text = "".join(text) if isinstance(text, list) else str(text)
-                if text.strip():
-                    thread.append({"role": "assistant", "content": text})
-            except Exception as e:
-                st.error(friendly_error(e))
-        ss.doubt_pending = False
-
-    if thread and thread[-1]["role"] == "user":
-        if st.button("🔁 Jawab dobara generate karo", key="d_retry"):
-            ss.doubt_pending = True
-            st.rerun()
-
-    with st.form("doubt_follow", clear_on_submit=True):
-        fu = st.text_input("Follow-up poochho", placeholder="e.g. Ek aur example se samjhao / Is step me ye kyun hua?")
-        sent = st.form_submit_button("Bhejo ➤")
-    if sent and fu.strip():
-        thread.append({"role": "user", "content": fu.strip()})
-        ss.doubt_pending = True
-        st.rerun()
-
-    a1, a2, a3 = st.columns(3)
-    if a1.button("🧹 Naya doubt", use_container_width=True, key="d_new"):
-        ss.doubt_thread = []
-        ss.doubt_pending = False
-        st.rerun()
-    can_quiz = any(t["role"] == "assistant" for t in thread)
-    if a2.button("📝 Is par quiz banao", use_container_width=True, disabled=not can_quiz, key="d_quiz"):
-        transcript = "\n\n".join(t["content"] for t in thread if t["content"])[-MAX_CHARS:]
-        launch_quiz(transcript, "Doubt: " + (thread[0]["content"] or "photo")[:40], cfg)
-    md = "\n\n".join(f"**{'Tum' if t['role'] == 'user' else 'AI'}:** {t['content']}" for t in thread if t["content"])
-    a3.download_button("⬇️ Notes (.md)", md.encode("utf-8"), file_name="doubt_notes.md", mime="text/markdown", use_container_width=True, key="d_dl")
-
-
-# ═════════════════════════════════════════════════════════════
-# STAGE · SETUP
+# STAGE 1: SETUP
 # ═════════════════════════════════════════════════════════════
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
     st.markdown(
         f"""<div class="qf-tiles">
-  <div class="qf-tile"><div class="v">{lvl}</div><div class="l">Level</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FFC857">{st.session_state.total_xp}</div><div class="l">Total XP</div></div>
-  <div class="qf-tile"><div class="v">{len(hist)}</div><div class="l">Quizzes khele</div></div>
-  <div class="qf-tile"><div class="v" style="color:#34D399">{best_pct}%</div><div class="l">Best score</div></div>
+  <div class="qf-tile"><div class="v">{lvl}</div><div class="l">{t('level')}</div></div>
+  <div class="qf-tile"><div class="v" style="color:#F59E0B">{st.session_state.total_xp}</div><div class="l">{t('total_xp')}</div></div>
+  <div class="qf-tile"><div class="v">{len(hist)}</div><div class="l">{t('quizzes_played')}</div></div>
+  <div class="qf-tile"><div class="v" style="color:#10B981">{best_pct}%</div><div class="l">{t('best_score')}</div></div>
 </div>""",
         unsafe_allow_html=True,
     )
@@ -2541,16 +1996,119 @@ if st.session_state.stage == "setup":
         "language": language, "mode": mode, "time_limit": time_limit, "quiz_limit": quiz_limit,
         "marks": marks_correct, "neg": neg_frac, "model": model,
     }
-    tab_quiz, tab_pyq, tab_doubt = st.tabs(["🧠 Quiz Arena", "🏛️ Govt Exam PYQs", "🔍 Doubt Solver"])
+    tab_quiz, tab_pyq, tab_doubt = st.tabs([t("tab_quiz"), t("tab_pyq"), t("tab_doubt")])
+
     with tab_quiz:
-        render_quiz_tab(cfg)
+        with st.container(key="srcpick"):
+            source = st.radio(t("src_prompt"), ["💡 Topic", "📄 PDF", "🖼️ Photo", "📝 Notes"], horizontal=True)
+
+        input_text, label, media = "", "", None
+
+        with st.container(key="panel"):
+            if source.startswith("💡"):
+                topic = st.text_input(t("topic_input"), placeholder=t("topic_placeholder"))
+                st.caption(t("quick_picks"))
+                cols = st.columns(4)
+                for c, pick in zip(cols, ["Python Basics", "World History", "Human Biology", "Indian Economy"]):
+                    if c.button(pick, use_container_width=True, key=f"pick_{pick}"):
+                        st.session_state["_picked"] = pick
+                        st.rerun()
+                if st.session_state.get("_picked") and not topic:
+                    topic = st.session_state["_picked"]
+                if topic.strip():
+                    input_text = f"Topic: {topic.strip()}\nUse knowledge to cover this accurately."
+                    label = topic.strip()
+
+            elif source.startswith("📄"):
+                up = st.file_uploader("Upload PDF", type=["pdf"])
+                if up is not None:
+                    _, total_pages = read_pdf(up, 1, 1)
+                    up.seek(0)
+                    rng = st.slider("Pages", 1, total_pages, (1, min(total_pages, 10))) if total_pages > 1 else (1, 1)
+                    pdf_text, _ = read_pdf(up, rng[0], rng[1])
+                    if pdf_text.strip():
+                        st.success(f"Loaded {len(pdf_text):,} characters.")
+                        input_text, label = pdf_text, f"PDF: {up.name}"
+
+            elif source.startswith("🖼️"):
+                photo_mode = st.radio("Photo Mode", ["📁 Upload File", "📸 Live Camera"], horizontal=True)
+                mf = (
+                    st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg", "webp"])
+                    if photo_mode.startswith("📁")
+                    else st.camera_input("Take Photo")
+                )
+                if mf is not None:
+                    data, mime = prepare_image(mf.getvalue(), getattr(mf, "type", "image/jpeg"))
+                    st.image(data, use_container_width=True)
+                    media = {"bytes": data, "mime": mime}
+                    input_text, label = "(image)", "Photo Notes"
+
+            else:
+                pasted = st.text_area("Paste Notes Here", height=180)
+                if pasted.strip():
+                    input_text, label = pasted, "Notes"
+
+        st.write("")
+        if st.button(t("generate_btn"), type="primary", use_container_width=True):
+            if input_text.strip():
+                tkey = topic_key_for("ai", label)
+                quiz = generate_with_progress(
+                    input_text, cfg["num_questions"], cfg["difficulty"], cfg["type_keys"], cfg["language"], cfg["model"],
+                    media=media, adaptive=cfg["adaptive"], avoid=get_seen_questions(tkey),
+                )
+                if quiz:
+                    start_quiz(quiz, {
+                        "label": label, "difficulty": cfg["difficulty"], "mode": cfg["mode"], "source": input_text,
+                        "media": media, "types": cfg["type_keys"], "adaptive": cfg["adaptive"], "language": cfg["language"],
+                        "model": cfg["model"], "time_limit": cfg["time_limit"], "quiz_limit": cfg["quiz_limit"],
+                        "marks": cfg["marks"], "neg": cfg["neg"], "tkey": tkey
+                    })
+                    st.rerun()
+
     with tab_pyq:
-        render_pyq_tab(cfg)
+        st.markdown("### 🏛️ Govt & Entrance Exam PYQs")
+        with st.container(key="panel_pyq"):
+            exam = st.selectbox("Target Exam", EXAM_LIST, key="pyq_exam")
+            dataset = load_pyq_dataset(exam)
+            subjects = ["All subjects"] + EXAM_SUBJECTS.get(exam, [])
+            subject = st.selectbox("Subject", subjects, key=f"pyq_subj_{exam}")
+            fresh_pool = [q for q in dataset if subject == "All subjects" or q["subject"].lower() == subject.lower()]
+            st.info(f"{len(fresh_pool)} Questions available in dataset.")
+
+            if st.button(t("start_pyq_btn"), type="primary", use_container_width=True):
+                if fresh_pool:
+                    quiz = [pyq_to_item(q) for q in random.sample(fresh_pool, min(cfg["num_questions"], len(fresh_pool)))]
+                    start_quiz(quiz, {
+                        "label": f"{exam} PYQ", "difficulty": "Medium", "mode": cfg["mode"], "source": exam,
+                        "media": None, "types": ["mcq"], "adaptive": False, "language": cfg["language"],
+                        "model": cfg["model"], "time_limit": cfg["time_limit"], "quiz_limit": cfg["quiz_limit"],
+                        "marks": cfg["marks"], "neg": cfg["neg"], "tkey": f"pyq::{exam}"
+                    })
+                    st.rerun()
+
     with tab_doubt:
-        render_doubt_tab(cfg)
+        st.markdown("### 🔍 AI Doubt Solver")
+        q_txt = st.text_area("Ask any doubt...", height=120)
+        if st.button("💡 Solve Doubt", type="primary", use_container_width=True):
+            if q_txt.strip():
+                st.session_state.doubt_thread = [{"role": "user", "content": q_txt.strip()}]
+                st.session_state.doubt_pending = True
+                st.rerun()
+
+        for msg in st.session_state.get("doubt_thread", []):
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if st.session_state.get("doubt_pending"):
+            with st.chat_message("assistant"):
+                msgs = [{"role": "system", "content": "You are a helpful tutor."}] + st.session_state.doubt_thread
+                ans = st.write_stream(llm_stream(msgs, cfg["model"]))
+                ans = "".join(ans) if isinstance(ans, list) else str(ans)
+                st.session_state.doubt_thread.append({"role": "assistant", "content": ans})
+                st.session_state.doubt_pending = False
 
 # ═════════════════════════════════════════════════════════════
-# STAGE · QUIZ
+# STAGE 2: QUIZ PLAY
 # ═════════════════════════════════════════════════════════════
 elif st.session_state.stage == "quiz":
     ss = st.session_state
@@ -2559,418 +2117,145 @@ elif st.session_state.stage == "quiz":
     i = ss.idx
     q = quiz[i]
     qid = ss.quiz_id
-    qtype_now = q["type"]
-    choice_type = qtype_now in ("mcq", "tf", "multi")
-    mode_now = ss.meta.get("mode", "Practice")
-    survival = mode_now == "Survival"
-    instant = mode_now in ("Practice", "Survival")
-    limit = ss.meta.get("time_limit", 0)
-    quiz_limit = ss.meta.get("quiz_limit", 0)
-    is_adaptive = ss.meta.get("adaptive", False)
-    lang, mdl = ss.meta.get("language", "English"), ss.meta.get("model", MODELS[0])
+    instant = ss.meta.get("mode") in ("Practice", "Survival")
 
-    if ss.q_key != (qid, i):
-        ss.q_key = (qid, i)
-        ss.q_start = time.time()
-
-    answered = sum(1 for a in ss.answers.values() if a not in (None, "", []))
     top_l, top_r = st.columns([4, 1.4])
-    top_l.progress(i / total, text=f"Question {i + 1} of {total}")
-    if survival:
-        left = lives_left()
-        top_r.markdown(f"<div class='qf-hearts'>{'❤️' * left}{'🖤' * (LIVES - left)}</div>", unsafe_allow_html=True)
-    else:
-        running = f"🎯 {fmt_marks(sum(question_marks(j) for j in ss.locked))} · " if instant else ""
-        top_r.markdown(f"<div style='text-align:right;font-weight:700'>{running}✅ {answered}/{total}</div>", unsafe_allow_html=True)
+    top_l.progress((i + 1) / total, text=f"Question {i + 1} / {total}")
+    top_r.markdown(f"**Score:** {sum(question_marks(j) for j in ss.locked)}")
 
-    if ss.meta.get("gen_note") and i == 0:
-        st.warning(ss.meta["gen_note"])
-    locked = ss.locked.get(i, False)
-    if limit and countdown is not None and not locked:
-        countdown(limit, qid, i, total, instant)
-    if quiz_limit and quiz_countdown is not None:
-        quiz_countdown(quiz_limit, qid, i)
-
-    type_label = {"mcq": "MCQ", "tf": "True/False", "multi": "Multi-select", "blank": "Fill in the blank", "short": "Short answer", "num": "Numerical"}[qtype_now]
-    lv_tag = f"<span class='qf-tag lv'>🎚️ {LEVEL_NAME[q['level']]}</span>" if is_adaptive else ""
-    src_tag = f"<span class='qf-tag lv'>📜 {esc(q['src'])}</span>" if q.get("src") else ""
-    _m, _pen = ss.meta.get("marks", 1.0), ss.meta.get("marks", 1.0) * ss.meta.get("neg", 0.0)
-    mk_tag = f"<span class='qf-tag'>+{fmt_marks(_m)}" + (f" / −{fmt_marks(_pen)}" if _pen and qtype_now != "short" and qtype_now not in ss.meta.get("no_neg_types", []) else "") + "</span>"
     st.markdown(
-        f"""<div class="qf-qcard"><div class="qf-tags">{src_tag}{lv_tag}{mk_tag}<span class='qf-tag'>{type_label}</span><span class='qf-tag'>{esc(q['topic'])}</span></div>
+        f"""<div class="qf-qcard">
         <div class="qf-qnum">Question {i + 1}</div>
         <div class="qf-qtext">{esc(q['question'])}</div></div>""",
         unsafe_allow_html=True,
     )
 
-    h1, h2, h3, _sp = st.columns([1.35, 1.0, 1.35, 0.4])
-    if q.get("hint") and not locked and not ss.hints_used.get(i):
-        if h1.button("💡 Hint (−5 XP)", key=f"hint_{qid}_{i}", use_container_width=True):
+    h1, h2, h3 = st.columns([1.5, 1.2, 1.5])
+    if q.get("hint") and not ss.locked.get(i):
+        if h1.button(t("hint_btn"), key=f"hint_{i}"):
             ss.hints_used[i] = True
             st.rerun()
-    is_saved = q["question"] in ss.bookmarks
-    if h2.button("📌 Saved" if is_saved else "🔖 Save", key=f"bm_{qid}_{i}", use_container_width=True):
+
+    saved = q["question"] in ss.bookmarks
+    if h2.button(t("saved_btn") if saved else t("save_btn"), key=f"save_{i}"):
         toggle_bookmark(q)
         st.rerun()
+
     with h3:
         speak_button(speech_text(q))
+
     if ss.hints_used.get(i) and q.get("hint"):
-        st.markdown(f"<div class='qf-hint'>💡 {esc(q['hint'])}</div>", unsafe_allow_html=True)
+        st.info(f"💡 {q['hint']}")
 
     prev = ss.answers.get(i)
     with st.container(key="optbox"):
-        choice = answer_widget(q, qid, i, locked, prev)
+        choice = answer_widget(q, qid, i, ss.locked.get(i, False), prev)
 
-    if choice_type and not locked:
-        extra = "<kbd>S</kbd> skip · " if instant else ""
-        st.markdown(
-            f"<div class='qf-kbd'>⌨️ <kbd>1</kbd>–<kbd>{len(q['options'])}</kbd> chuno · <kbd>Enter</kbd> aage · <kbd>H</kbd> hint · {extra}<kbd>R</kbd> sunao</div>",
-            unsafe_allow_html=True,
-        )
-
-    game_over = survival and locked and lives_left() <= 0
-
-    if instant and locked:
+    if instant and ss.locked.get(i):
         st.markdown(feedback_html(i, q, ss.timed_out.get(i)), unsafe_allow_html=True)
-        if game_over:
-            st.error("💀 Saari lives khatam! Game over.")
-        if st.button("🧠 Aur detail me samjhao", key=f"deep_{qid}_{i}"):
-            with st.spinner("Soch raha hoon…"):
-                try:
-                    explain_more(q, user_text(i), lang, mdl)
-                except Exception as e:
-                    st.error(friendly_error(e))
-        if q["question"] in ss.deep:
-            st.info(ss.deep[q["question"]])
-
-    st.write("")
-    if not instant and not limit and not is_adaptive and total > 1:
-        with st.expander("🧭 Question palette (kisi bhi sawal par jao)"):
-            st.caption("✅ = answer diya hua · baaki khali. Neela button = abhi wala sawal.")
-            per_row = 8
-            for r0 in range(0, total, per_row):
-                pal_cols = st.columns(per_row)
-                for k, pc in enumerate(pal_cols):
-                    j = r0 + k
-                    if j >= total:
-                        break
-                    done_j = ss.answers.get(j) not in (None, "", [])
-                    if pc.button(f"{'✅' if done_j else ''}{j + 1}", key=f"pal_{qid}_{j}", type="primary" if j == i else "secondary", use_container_width=True):
-                        ss.answers[i] = norm_answer(choice)
-                        ss.idx = j
-                        st.rerun()
 
     b1, b2, b3 = st.columns(3)
-    last = i == total - 1
-
-    if not instant and not limit and not is_adaptive and i > 0:
-        if b1.button("⬅️ Back", use_container_width=True):
+    if instant and not ss.locked.get(i):
+        if b2.button(t("check_btn"), type="primary", use_container_width=True):
             ss.answers[i] = norm_answer(choice)
-            ss.idx -= 1
-            st.rerun()
-
-    if instant and not locked:
-        if b2.button("Check answer", type="primary", use_container_width=True, disabled=(choice_type and not has_answer(choice))):
-            ss.answers[i] = norm_answer(choice)
-            if qtype_now == "short":
-                with st.spinner("AI tumhara answer check kar raha hai…"):
-                    grade_short(i)
             ss.locked[i] = True
             record_time(i)
             queue_sound("correct" if is_correct(i) else "wrong")
             st.rerun()
-        if b3.button("Skip ⏭️", use_container_width=True):
+        if b3.button(t("skip_btn"), use_container_width=True):
             ss.answers[i] = None
             ss.locked[i] = True
-            record_time(i)
-            queue_sound("wrong")
-            if last:
+            if i == total - 1:
                 finish_quiz()
             else:
                 advance(i)
             st.rerun()
     else:
-        btn_label = "Result dekho 💀" if game_over else ("Finish 🏁" if last else "Next ➡️")
-        if b3.button(btn_label, type="primary", use_container_width=True):
-            if not instant:
-                ss.answers[i] = norm_answer(choice)
-                record_time(i)
-            if last or game_over:
+        btn_txt = t("finish_btn") if i == total - 1 else t("next_btn")
+        if b3.button(btn_txt, type="primary", use_container_width=True):
+            ss.answers[i] = norm_answer(choice)
+            record_time(i)
+            if i == total - 1:
                 finish_quiz()
             else:
                 advance(i)
             st.rerun()
 
-    st.write("")
-    if st.button("✖ Quiz chhodo"):
-        reset_all()
-        st.rerun()
-
 # ═════════════════════════════════════════════════════════════
-# STAGE · FLASHCARDS
+# STAGE 3: FLASHCARDS
 # ═════════════════════════════════════════════════════════════
 elif st.session_state.stage == "flash":
     ss = st.session_state
     cards = ss.flash_cards
     fi = ss.flash_i
     card = cards[fi]
-    st.markdown("## 📇 Flashcards")
-    st.progress((fi + 1) / len(cards), text=f"Card {fi + 1} of {len(cards)}")
+
+    st.markdown(f"## 📇 {t('flashcards_btn')}")
+    st.progress((fi + 1) / len(cards), text=f"Card {fi + 1} / {len(cards)}")
 
     if ss.flash_show:
-        st.markdown(
-            f"<div class='qf-flash back'><div>✅ {esc(correct_text(card))}"
-            f"<div style='font-family:Plus Jakarta Sans;font-size:.95rem;font-weight:400;color:var(--mute);margin-top:10px'>{esc(card['explanation'])}</div></div></div>",
-            unsafe_allow_html=True,
-        )
+        st.success(f"**Answer:** {correct_text(card)}\n\n{card['explanation']}")
     else:
-        st.markdown(f"<div class='qf-flash'>{esc(card['question'])}</div>", unsafe_allow_html=True)
+        st.info(f"Question:")
 
     f1, f2, f3 = st.columns(3)
-    if f1.button("⬅️ Pichhla", use_container_width=True, disabled=fi == 0):
+    if f1.button("⬅️ Previous", disabled=fi == 0):
         ss.flash_i -= 1
         ss.flash_show = False
         st.rerun()
-    if f2.button("🔄 Answer dikhao" if not ss.flash_show else "🔄 Sawal dikhao", type="primary", use_container_width=True):
+    if f2.button("🔄 Flip Card", type="primary"):
         ss.flash_show = not ss.flash_show
         st.rerun()
-    if f3.button("Agla ➡️", use_container_width=True, disabled=fi == len(cards) - 1):
+    if f3.button("Next ➡️", disabled=fi == len(cards) - 1):
         ss.flash_i += 1
         ss.flash_show = False
         st.rerun()
 
-    st.write("")
-    if st.button("← Wapas jao"):
-        ss.stage = "result" if (ss.flash_return == "result" and ss.result) else "setup"
+    if st.button(t("back_btn")):
+        ss.stage = ss.flash_return
         st.rerun()
 
 # ═════════════════════════════════════════════════════════════
-# STAGE · RESULT
+# STAGE 4: RESULT
 # ═════════════════════════════════════════════════════════════
 else:
     ss = st.session_state
-    quiz, answers, res = ss.quiz, ss.answers, ss.result
-    total = len(quiz)
-    lang, mdl = ss.meta.get("language", "English"), ss.meta.get("model", MODELS[0])
+    res = ss.result
+    st.markdown("## 🏆 Quiz Results")
 
-    correct_idx = [i for i in range(total) if is_correct(i)]
-    skipped_idx = [i for i in range(total) if is_skipped(i)]
-    wrong_idx = [i for i in range(total) if i not in correct_idx and i not in skipped_idx]
-    pct, score = res["pct"], res["score"]
-    elapsed = ss.elapsed_before + (ss.end_time or time.time()) - (ss.start_time or time.time())
-
-    if pct >= 80:
-        color, title, msg = "#34D399", "Zabardast! 🏆", "Topic par tumhari pakad mast hai."
-    elif pct >= 50:
-        color, title, msg = "#FFC857", "Achha try! 👍", "Thodi aur practice se top score aa jayega."
-    else:
-        color, title, msg = "#FB7185", "Keep going 💪", "Explanations padho aur dobara try karo."
-
-    if not ss.celebrated:
-        if pct >= 80:
-            st.balloons()
-        ss.celebrated = True
-
-    st.markdown(f"## {title}")
-    st.caption(msg)
-    _m = ss.meta.get("marks", 1.0)
-    st.caption(f"Marking: +{fmt_marks(_m)} sahi · −{fmt_marks(_m * ss.meta.get('neg', 0.0))} galat · 0 skip{' · numerical par negative nahi' if ss.meta.get('no_neg_types') else ''}  |  Accuracy = sahi ÷ attempted")
-    if res.get("time_up"):
-        st.warning("⏰ Quiz ka total time khatam ho gaya — bache hue sawal skip maane gaye.")
     st.markdown(
         f"""
-<div class="qf-ring" style="--t:{pct};--ring-color:{color}">
-  <div class="qf-ring-in"><div class="big">{pct}%</div><div class="sm">{fmt_marks(res['marks'])} / {fmt_marks(res['max_marks'])} marks</div></div>
-</div>
-<div class="qf-tiles">
-  <div class="qf-tile"><div class="v" style="color:#FFC857">{fmt_marks(res['marks'])}<span style="font-size:.9rem;opacity:.7"> / {fmt_marks(res['max_marks'])}</span></div><div class="l">Marks</div></div>
-  <div class="qf-tile"><div class="v" style="color:#22D3EE">{res['accuracy']}%</div><div class="l">Accuracy</div></div>
-  <div class="qf-tile"><div class="v">{res['attempted']}<span style="font-size:.9rem;opacity:.7"> / {total}</span></div><div class="l">Attempted</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FB7185">−{fmt_marks(res['neg_lost'])}</div><div class="l">Negative marks</div></div>
-</div>
-<div class="qf-tiles">
-  <div class="qf-tile"><div class="v" style="color:#34D399">{score}</div><div class="l">Sahi</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FB7185">{len(wrong_idx)}</div><div class="l">Galat</div></div>
-  <div class="qf-tile"><div class="v">{len(skipped_idx)}</div><div class="l">Skipped</div></div>
-  <div class="qf-tile"><div class="v">{fmt_time(elapsed)}</div><div class="l">Total time</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FFC857">+{res['xp']}</div><div class="l">XP earned</div></div>
-  <div class="qf-tile"><div class="v">{res['best_streak']}🔥</div><div class="l">Best streak</div></div>
-  <div class="qf-tile"><div class="v">{res['avg_time']:.1f}s</div><div class="l">Avg / question</div></div>
-  <div class="qf-tile"><div class="v">{res['hints']}</div><div class="l">Hints used</div></div>
-</div>
-""",
+    <div class="qf-tiles">
+      <div class="qf-tile"><div class="v" style="color:#10B981">{res['score']} / {res['total']}</div><div class="l">Score</div></div>
+      <div class="qf-tile"><div class="v" style="color:#06B6D4">{res['accuracy']}%</div><div class="l">Accuracy</div></div>
+      <div class="qf-tile"><div class="v" style="color:#F59E0B">+{res['xp']}</div><div class="l">XP Earned</div></div>
+      <div class="qf-tile"><div class="v">{res['best_streak']} 🔥</div><div class="l">Best Streak</div></div>
+    </div>
+    """,
         unsafe_allow_html=True,
     )
 
-    if res["leveled_up"]:
-        st.success(f"🎉 Level up! Ab tum **Level {level_of(ss.total_xp)}** par ho.")
-    if res["badges"]:
-        st.markdown(
-            "<div class='qf-badges'>" + "".join(f"<span class='qf-badge'>{esc(b)}</span>" for b in res["badges"]) + "</div>",
-            unsafe_allow_html=True,
-        )
-
-    with st.container(key="morebox"):
-        game_over_now = ss.meta.get("mode") == "Survival" and lives_left() <= 0
-        st.markdown(f"**➕ Aur sawal chahiye?**  Abhi tak **{total}** sawal ho chuke hain.")
-        mc1, mc2 = st.columns([1, 2])
-        more_n = int(mc1.number_input("Kitne aur sawal?", 1, 50, 10, 1, key="more_n", label_visibility="collapsed"))
-        can_more = (not game_over_now) and total + more_n <= MAX_TOTAL_Q
-        if mc2.button(f"➕ {more_n} aur sawal jodo", type="primary", use_container_width=True, disabled=not can_more):
-            with st.spinner("Naye sawal ban rahe hain…"):
-                try:
-                    if extend_quiz(more_n):
-                        st.rerun()
-                    else:
-                        st.error("Naye sawal nahi ban paye. Dobara try karo.")
-                except Exception as e:
-                    st.error(friendly_error(e))
-        note = "Naye sawal isi quiz me jud jayenge — marks, accuracy aur XP poore quiz ka milkar banega."
-        if game_over_now:
-            note = "Survival me saari lives khatam ho chuki hain, isliye aur sawal nahi jud sakte."
-        elif total + more_n > MAX_TOTAL_Q:
-            note = f"Ek quiz me maximum {MAX_TOTAL_Q} sawal ho sakte hain."
-        st.caption(note)
-    st.write("")
-
-    a1, a2 = st.columns(2)
-    if a1.button("🔁 Naya quiz", use_container_width=True, type="primary"):
+    a1, a2, a3 = st.columns(3)
+    if a1.button(t("new_quiz"), type="primary", use_container_width=True):
         reset_all()
         st.rerun()
-    if a2.button("🎯 Sirf galat dobara", use_container_width=True, disabled=not (wrong_idx or skipped_idx), help="Sirf galat/skip kiye hue sawal phir se solve karo"):
-        redo = [reshuffle(quiz[i]) for i in wrong_idx + skipped_idx]
-        meta = dict(ss.meta)
-        meta["label"] = "Retry · " + meta.get("label", "Quiz")
-        start_quiz(redo, meta)
+    if a2.button(t("retry_wrong"), use_container_width=True):
+        wrong_q = [ss.quiz[k] for k in range(len(ss.quiz)) if not is_correct(k)]
+        if wrong_q:
+            start_quiz(wrong_q, ss.meta)
+            st.rerun()
+    if a3.button(t("restart_quiz"), use_container_width=True):
+        start_quiz(ss.quiz, ss.meta)
         st.rerun()
 
-    a3, a4 = st.columns(2)
-    if a3.button("🔄 Wahi quiz phir se", use_container_width=True):
-        start_quiz([reshuffle(q) for q in quiz], dict(ss.meta))
-        st.rerun()
-    if a4.button("🆕 Naye sawal (same source)", use_container_width=True):
-        m = ss.meta
-        with st.spinner("Naye sawal ban rahe hain…"):
-            try:
-                new_quiz = more_questions(len(quiz), [q["question"] for q in quiz])
-                if new_quiz:
-                    start_quiz(new_quiz, dict(m))
-                    st.rerun()
-                else:
-                    st.error("Naye sawal nahi ban paye.")
-            except Exception as e:
-                st.error(friendly_error(e))
-
-    if st.button("📇 Is quiz ke flashcards", use_container_width=True):
-        ss.flash_cards = [dict(q) for q in quiz]
-        ss.flash_i, ss.flash_show, ss.flash_return = 0, False, "result"
-        ss.stage = "flash"
-        st.rerun()
-
-    st.markdown("### 📊 Topic-wise performance")
-    topic_df = pd.DataFrame([{"Topic": q["topic"], "Correct": int(is_correct(i))} for i, q in enumerate(quiz)])
-    agg = topic_df.groupby("Topic")["Correct"].agg(["sum", "count"]).reset_index()
-    agg["Accuracy %"] = (agg["sum"] / agg["count"] * 100).round(0)
-    if len(agg) > 1:
-        st.bar_chart(agg.set_index("Topic")["Accuracy %"])
-    weak = agg[agg["Accuracy %"] < 60]["Topic"].tolist()
-    strong = agg[agg["Accuracy %"] >= 80]["Topic"].tolist()
-    if strong:
-        st.success("💪 Strong: " + ", ".join(strong))
-    if weak:
-        st.warning("📌 Revise karo: " + ", ".join(weak))
-
-    if wrong_idx or skipped_idx:
-        if st.button("🧭 AI study plan banao", use_container_width=True):
-            with st.spinner("Study plan ban raha hai…"):
-                try:
-                    ss.study_plan = make_study_plan([quiz[i] for i in wrong_idx + skipped_idx], lang, mdl)
-                except Exception as e:
-                    st.error(friendly_error(e))
-        if ss.study_plan:
-            st.markdown(ss.study_plan)
-
-    st.markdown("### 🔍 Review")
-    for i, q in enumerate(quiz):
-        icon = "✅" if is_correct(i) else ("⏭️" if is_skipped(i) else "❌")
-        with st.expander(f"{icon}  Q{i + 1}. {q['question'][:90]}"):
-            st.markdown(f"**{q['question']}**")
-            sel = answers.get(i)
-            if q["type"] in ("mcq", "tf"):
-                for o in q["options"]:
-                    if o == q["answer"]:
-                        st.markdown(f"- ✅ **{o}**")
-                    elif o == sel:
-                        st.markdown(f"- ❌ ~~{o}~~ (tumhara answer)")
-                    else:
-                        st.markdown(f"- {o}")
-            elif q["type"] == "multi":
-                chosen = set(sel or [])
-                for o in q["options"]:
-                    right = o in q["answers"]
-                    if right and o in chosen:
-                        st.markdown(f"- ✅ **{o}**")
-                    elif right:
-                        st.markdown(f"- ✅ **{o}** (tumne miss kiya)")
-                    elif o in chosen:
-                        st.markdown(f"- ❌ ~~{o}~~ (galat chuna)")
-                    else:
-                        st.markdown(f"- {o}")
-            else:
-                st.markdown(f"**Tumhara answer:** {user_text(i)}")
-                st.markdown(f"**Sahi answer:** {q['answer']}")
-                if q["type"] == "short" and i in ss.grades:
-                    g = ss.grades[i]
-                    st.markdown(f"🧪 **AI score:** {g['score']:.1f}/1 — {g['feedback']}")
-            if is_skipped(i):
-                st.caption("Ye sawal skip hua / time khatam ho gaya / game over ho gaya.")
-            _mk = question_marks(i)
-            st.caption(f"🎯 Marks: {'+' if _mk > 0 else ''}{fmt_marks(_mk)}")
-            st.info(f"💡 {q['explanation']}")
-            c1, c2 = st.columns(2)
-            if c1.button("🧠 Aur detail me samjhao", key=f"rv_deep_{ss.quiz_id}_{i}"):
-                with st.spinner("Soch raha hoon…"):
-                    try:
-                        explain_more(q, user_text(i), lang, mdl)
-                    except Exception as e:
-                        st.error(friendly_error(e))
-            saved = q["question"] in ss.bookmarks
-            if c2.button("📌 Saved" if saved else "🔖 Save", key=f"rv_bm_{ss.quiz_id}_{i}"):
-                toggle_bookmark(q)
-                st.rerun()
-            if q["question"] in ss.deep:
-                st.markdown(ss.deep[q["question"]])
-
-    st.markdown("### 📥 Download")
-    df = pd.DataFrame(
-        [
-            {
-                "No": i + 1,
-                "Type": q["type"],
-                "Topic": q["topic"],
-                "Question": q["question"],
-                "Options": " | ".join(q["options"]),
-                "Your answer": user_text(i),
-                "Correct answer": correct_text(q),
-                "Result": "Correct" if is_correct(i) else "Wrong/Skipped",
-                "Marks": question_marks(i),
-                "Explanation": q["explanation"],
-            }
-            for i, q in enumerate(quiz)
-        ]
-    )
-    d1, d2, d3 = st.columns(3)
-    d1.download_button("Report (HTML)", build_report_html().encode("utf-8"), file_name="quiz_report.html", mime="text/html", use_container_width=True)
-    d2.download_button("Results (CSV)", df.to_csv(index=False).encode("utf-8-sig"), file_name="quiz_results.csv", mime="text/csv", use_container_width=True)
-    d3.download_button("Quiz (JSON)", json.dumps(quiz, ensure_ascii=False, indent=2).encode("utf-8"), file_name="quiz.json", mime="application/json", use_container_width=True)
+    st.download_button("📄 Download HTML Report", build_report_html(), file_name="Quiz_Report.html", mime="text/html")
 
 # ─────────────────────────────────────────────────────────────
-# Browser layer (sound / voice / shortcuts) — keep at the very end
+# BROWSER ENGINE LAYER
 # ─────────────────────────────────────────────────────────────
-_run_lang = st.session_state.meta.get("language", language) if st.session_state.stage == "quiz" else language
 render_browser_layer(
-    sound_on=sound_on,
-    tts_lang="hi-IN" if _run_lang == "Hindi" else "en-IN",
-    tts_rate=tts_rate,
-    auto_read=auto_read,
+    sound_on=st.session_state.get("sound_on", True),
+    tts_lang="hi-IN" if st.session_state.get("app_lang") == "Hindi" else "en-IN",
+    tts_rate=st.session_state.get("tts_rate", 1.0),
+    auto_read=st.session_state.get("auto_read", False),
 )
