@@ -24,14 +24,11 @@ import auth_store
 
 
 def custom_get_setting(name, default=None):
-    # 1. Check direct secrets
-    if name in st.secrets:
-        return st.secrets[name]
-    # 2. Check SMTP block
-    if "smtp" in st.secrets and name in st.secrets["smtp"]:
-        return st.secrets["smtp"][name]
-    # 3. Check environment
-    return os.getenv(name, default)
+  if name in st.secrets:
+    return st.secrets[name]
+  if "smtp" in st.secrets and name in st.secrets["smtp"]:
+    return st.secrets["smtp"][name]
+  return os.getenv(name, default)
 
 
 auth_store.set_settings_getter(custom_get_setting)
