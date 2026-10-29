@@ -1,5 +1,6 @@
 import io
 import os
+import hashlib
 import re
 import json
 import math
@@ -8,7 +9,7 @@ import base64
 import random
 import difflib
 import html
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
@@ -16,22 +17,14 @@ import streamlit.components.v1 as components
 from pypdf import PdfReader
 from groq import Groq
 
-import auth_store
-import i18n
-from i18n import t, tr, LANGS
-import theme
-import auth_store
-
-
-def custom_get_setting(name, default=None):
-  if name in st.secrets:
-    return st.secrets[name]
-  if "smtp" in st.secrets and name in st.secrets["smtp"]:
-    return st.secrets["smtp"][name]
-  return os.getenv(name, default)
-
-
-auth_store.set_settings_getter(custom_get_setting)
+try:  # login + database (optional: without it the app runs in guest mode)
+    from supabase import create_client
+except Exception:  # pragma: no cover
+    create_client = None
+try:  # keeps the user logged in after a page refresh
+    import extra_streamlit_components as stx
+except Exception:  # pragma: no cover
+    stx = None
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -44,9 +37,6 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="expanded",
 )
-
-i18n.install()
-st.session_state.setdefault("ui_lang", "hg")
 
 LIGHT = bool(st.session_state.get("light", False))
 
@@ -68,28 +58,11 @@ h1,h2,h3,.qf-display{ font-family:'Space Grotesk',sans-serif !important; letter-
 /* Hide watermark but keep the sidebar toggle usable (important on mobile) */
 #MainMenu, footer{ visibility:hidden; height:0; }
 header[data-testid="stHeader"]{ background:transparent !important; }
-/* Hide Streamlit / Streamlit-Cloud chrome (Fork, GitHub, Deploy, menu, badges) */
-[data-testid="stToolbar"], [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], .stAppDeployButton,
-[data-testid="stDecoration"], [data-testid="stStatusWidget"], [class*="viewerBadge"], [class*="_profileContainer"],
-[class*="_profilePreview"], header a[href*="github.com"], a[href*="streamlit.io/cloud"], .stDeployButton{
-  display:none !important; visibility:hidden !important;
-}
-/* Native expand control = fallback only (the floating button below replaces it) */
-[data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"]{
+[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarExpandButton"]{
   display:block !important; position:fixed !important; top:12px !important; left:12px !important; z-index:999999 !important;
   background-color:#1f2937 !important; border-radius:8px !important; border:1px solid var(--line) !important;
+  box-shadow:0 4px 12px rgba(0,0,0,.5) !important;
 }
-body.qf-has-toggle [data-testid="stSidebarCollapsedControl"], body.qf-has-toggle [data-testid="stExpandSidebarButton"]{
-  opacity:0 !important; pointer-events:none !important;
-}
-/* Floating sidebar button: always visible, whether the sidebar is open or closed */
-#qf-sb-toggle{
-  position:fixed; top:10px; left:10px; z-index:1000001; width:42px; height:42px; border-radius:13px; cursor:pointer;
-  font-size:20px; line-height:1; color:#fff; border:1px solid rgba(255,255,255,.25);
-  background:linear-gradient(135deg,#7C5CFF,#22D3EE); box-shadow:0 6px 18px rgba(0,0,0,.45);
-}
-#qf-sb-toggle:hover{ transform:scale(1.06); }
-section[data-testid="stSidebar"] > div:first-child{ padding-top:2.4rem; }
 
 .stApp{
   background:
@@ -97,7 +70,7 @@ section[data-testid="stSidebar"] > div:first-child{ padding-top:2.4rem; }
     radial-gradient(900px 480px at 100% 0%, rgba(34,211,238,.15), transparent 55%),
     var(--bg);
 }
-.block-container{ padding-top:3.6rem; max-width:860px; }
+.block-container{ padding-top:1.4rem; max-width:860px; }
 section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var(--line); }
 
 /* Hero */
@@ -125,7 +98,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
 .qf-step.done{ color:var(--good); border-color:rgba(52,211,153,.5); }
 
 /* Glass panels */
-.st-key-panel, .st-key-panel_login, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
+.st-key-panel, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-panel_login, .st-key-optbox, .st-key-morebox{
   background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px 22px; backdrop-filter:blur(6px);
 }
 .st-key-optbox{ padding:14px 16px; counter-reset:opt; }
@@ -260,10 +233,8 @@ div[data-baseweb="select"] *{ color:var(--txt) !important; }
 """
 
 st.markdown(BASE_CSS, unsafe_allow_html=True)
-st.markdown(theme.PREMIUM_CSS, unsafe_allow_html=True)
 if LIGHT:
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
-    st.markdown(theme.PREMIUM_LIGHT_CSS, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # API KEY / CLIENT
@@ -285,6 +256,19 @@ def get_client(key: str):
 
 
 client = get_client(api_key)
+
+
+def _secret(name):
+    try:
+        v = st.secrets.get(name)
+    except Exception:
+        v = None
+    return v or os.getenv(name)
+
+
+SB_URL, SB_KEY = _secret("SUPABASE_URL"), _secret("SUPABASE_ANON_KEY")
+AUTH_CONFIGURED = bool(SB_URL and SB_KEY)
+AUTH_ENABLED = AUTH_CONFIGURED and create_client is not None
 
 MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -323,6 +307,61 @@ TYPE_SPECS = {
 }
 
 # ─────────────────────────────────────────────────────────────
+# UI LANGUAGE (separate from the language used to generate quiz content)
+# ─────────────────────────────────────────────────────────────
+UI_TEXT = {
+    "English": {
+        "app_language": "App language", "quiz_language": "Quiz content language",
+        "login_sub": "Sign in to keep your history, XP, and saved questions synced.",
+        "login_method": "Choose a sign-in method", "email_login": "📧 Email",
+        "phone_login": "📱 Mobile number", "email_address": "Email address",
+        "mobile_number": "Mobile number", "phone_hint": "For India, enter 10 digits. For other countries, include the +country code.",
+        "send_otp": "📨 Send OTP", "wrong_email": "Enter a valid email address.",
+        "wrong_phone": "Enter a valid mobile number.", "sending_otp": "Sending OTP…",
+        "otp_sent": "OTP sent to", "enter_otp": "Enter OTP", "verify": "✅ Verify",
+        "enter_first": "Enter the OTP first.", "verifying": "Verifying…", "resend": "🔁 Resend OTP",
+        "change_contact": "← Change email / number", "level": "Level", "quiz_settings": "⚙️ Quiz settings",
+        "questions": "Questions", "difficulty": "Difficulty", "adaptive": "🎚️ Adaptive difficulty",
+        "question_types": "Question types", "mode": "Mode", "timer": "⏱️ Timer", "marking": "🎯 Marking",
+    },
+    "Hinglish": {},
+    "Hindi": {
+        "app_language": "ऐप की भाषा", "quiz_language": "क्विज़ की भाषा",
+        "login_sub": "अपनी हिस्ट्री, XP और सेव किए सवाल सुरक्षित रखने के लिए लॉग इन करें।",
+        "login_method": "लॉग इन का तरीका चुनें", "email_login": "📧 ईमेल",
+        "phone_login": "📱 मोबाइल नंबर", "email_address": "ईमेल पता",
+        "mobile_number": "मोबाइल नंबर", "phone_hint": "भारत के लिए 10 अंक लिखें। दूसरे देश के लिए +country code जोड़ें।",
+        "send_otp": "📨 OTP भेजें", "wrong_email": "सही ईमेल पता लिखें।",
+        "wrong_phone": "सही मोबाइल नंबर लिखें।", "sending_otp": "OTP भेजा जा रहा है…",
+        "otp_sent": "OTP भेजा गया:", "enter_otp": "OTP डालें", "verify": "✅ सत्यापित करें",
+        "enter_first": "पहले OTP डालें।", "verifying": "सत्यापित हो रहा है…", "resend": "🔁 OTP दोबारा भेजें",
+        "change_contact": "← ईमेल / नंबर बदलें", "level": "लेवल", "quiz_settings": "⚙️ क्विज़ सेटिंग्स",
+        "questions": "सवाल", "difficulty": "कठिनाई", "adaptive": "🎚️ बदलती कठिनाई",
+        "question_types": "सवाल के प्रकार", "mode": "मोड", "timer": "⏱️ टाइमर", "marking": "🎯 अंक",
+    },
+}
+UI_TEXT["Hinglish"] = {
+    "app_language": "App ki language", "quiz_language": "Quiz content ki language",
+    "login_sub": "Login karo, tumhari history, XP aur saved questions sync rahenge.",
+    "login_method": "Login kaise karna hai?", "email_login": "📧 Email se",
+    "phone_login": "📱 Mobile number se", "email_address": "Email address",
+    "mobile_number": "Mobile number", "phone_hint": "India ke liye 10 digits. Dusre country ke liye +country code.",
+    "send_otp": "📨 OTP bhejo", "wrong_email": "Sahi email address likho.",
+    "wrong_phone": "Sahi mobile number likho.", "sending_otp": "OTP bheja ja raha hai…",
+    "otp_sent": "OTP bheja gaya:", "enter_otp": "OTP daalo", "verify": "✅ Verify karo",
+    "enter_first": "Pehle OTP daalo.", "verifying": "Verify ho raha hai…", "resend": "🔁 OTP dobara bhejo",
+    "change_contact": "← Email / number badlo", "level": "Level", "quiz_settings": "⚙️ Quiz settings",
+    "questions": "Questions", "difficulty": "Difficulty", "adaptive": "🎚️ Adaptive difficulty",
+    "question_types": "Question types", "mode": "Mode", "timer": "⏱️ Timer", "marking": "🎯 Marking",
+}
+
+
+def ui(key):
+    lang = st.session_state.get("app_language", "Hinglish")
+    return UI_TEXT.get(lang, UI_TEXT["Hinglish"]).get(key, UI_TEXT["Hinglish"].get(key, key))
+
+
+# ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
 def fresh_run_state():
@@ -334,10 +373,12 @@ def fresh_run_state():
 
 
 GLOBAL_DEFAULTS = {
+    "app_language": "Hinglish",
     "stage": "setup", "quiz_id": 0, "history": [], "meta": {}, "total_xp": 0, "bookmarks": {}, "deep": {},
     "flash_cards": [], "flash_i": 0, "flash_show": False, "flash_return": "setup",
     "q_key": None, "q_start": time.time(), "_picked": "",
     "pyq_uploaded": [], "doubt_thread": [], "doubt_pending": False, "doubt_opts": {},
+    "user": None, "sb": None, "tokens": {}, "is_admin": False, "seen_local": {}, "bank_cache": {}, "otp": {},
 }
 for _k, _v in {**GLOBAL_DEFAULTS, **fresh_run_state()}.items():
     if _k not in st.session_state:
@@ -564,48 +605,7 @@ def validate_and_shuffle(items, default_level=2, adaptive=False):
         except Exception:
             continue
     return good
-def otp_send(channel, ident):
-  app_name = APP_NAME
-  # auth_store se OTP generate & send hoga
-  ok, msg_key, dev_code = auth_store.request_otp(ident, channel, app_name)
 
-  if not ok:
-    if msg_key == "not_configured":
-      raise ValueError(
-          "OTP service set up nahi hai. Secrets me SMTP add karein ya"
-          " DEV_SHOW_OTP = '1' set karein."
-      )
-    elif msg_key == "wait":
-      raise ValueError("Thodi der ruk kar dobara OTP maango.")
-    elif msg_key == "too_many":
-      raise ValueError("Bahut baar OTP maang liya. Thodi der baad try karo.")
-    else:
-      raise ValueError(f"OTP Error: {msg_key}")
-
-  if dev_code:
-    st.info(f"🧪 [DEV MODE] Aapka OTP code: **{dev_code}**")
-
-
-def otp_verify(channel, ident, code):
-  user_id, msg_key = auth_store.verify_otp(ident, channel, code)
-
-  if msg_key == "ok" and user_id:
-    session_token = auth_store.create_session(user_id)
-    st.session_state["user"] = {
-        "id": str(user_id),
-        "email": ident if channel == "email" else "",
-        "phone": ident if channel == "phone" else "",
-    }
-    st.session_state["session_token"] = session_token
-    return True
-  elif msg_key == "expired":
-    raise ValueError("OTP expire ho gaya hai.")
-  elif msg_key == "wrong":
-    raise ValueError("Galat OTP daala hai.")
-  elif msg_key == "locked":
-    raise ValueError("Bahut baar galat OTP dala. Account lock ho gaya.")
-  else:
-    raise ValueError("Verification fail ho gaya.")
 
 def is_skipped(i) -> bool:
     return st.session_state.answers.get(i) in (None, "", [])
@@ -713,6 +713,7 @@ Rules:
 - "topic": a 1-3 word sub-topic label.
 {avoid_rule}
 {exam_rule}
+- Prefer fresh sub-topics and angles every time (variation seed {random.randint(1000, 9999)}).
 
 Return ONLY a JSON object: {{"questions": [ ...question objects... ]}}
 
@@ -747,10 +748,12 @@ Return ONLY a JSON object: {{"questions": [ ...question objects... ]}}
 
 
 def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None, avoid=None, adaptive=False, progress=None, exam=None):
-    """Generate in batches of 10 so big quizzes (up to 50) stay reliable; later batches avoid earlier questions."""
-    quiz, seen = [], set()
+    """Generate in batches of 10; drops anything already seen (exact or near-identical) so repeats never reach the user."""
+    quiz = []
     avoid_list = list(avoid or [])
-    attempts, max_attempts = 0, num_q // 5 + 4
+    seen_h = {qhash(a) for a in avoid_list}
+    seen_n = [norm_text(a) for a in avoid_list]
+    attempts, max_attempts = 0, num_q // 5 + 5
     while len(quiz) < num_q and attempts < max_attempts:
         attempts += 1
         n = min(10, num_q - len(quiz))
@@ -761,9 +764,9 @@ def generate_quiz_batched(text, num_q, diff, type_keys, lang, model, media=None,
                 break  # keep what we already have
             raise
         for b in batch:
-            key = b["question"].strip().lower()
-            if key not in seen:
-                seen.add(key)
+            if not is_duplicate(b["question"], seen_h, seen_n):
+                seen_h.add(qhash(b["question"]))
+                seen_n.append(norm_text(b["question"]))
                 quiz.append(b)
         avoid_list += [b["question"] for b in batch]
         if progress:
@@ -838,6 +841,472 @@ Under 220 words."""
 
 
 # ─────────────────────────────────────────────────────────────
+# ACCOUNT (email / phone OTP), DATABASE AND "ALREADY SEEN" MEMORY
+# ─────────────────────────────────────────────────────────────
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def qhash(text) -> str:
+    return hashlib.sha1(norm_text(text).encode("utf-8")).hexdigest()[:16]
+
+
+def topic_key_for(kind, label) -> str:
+    return f"{kind}::{norm_text(label)[:80]}"
+
+
+def is_duplicate(question, seen_hashes, seen_norms):
+    """Exact repeat or a near-identical rewording of something already seen."""
+    if qhash(question) in seen_hashes:
+        return True
+    n = norm_text(question)
+    return any(difflib.SequenceMatcher(None, n, x).ratio() >= 0.88 for x in seen_norms[-120:])
+
+
+def db_on() -> bool:
+    ss = st.session_state
+    return bool(AUTH_ENABLED and ss.get("user") and ss.get("sb"))
+
+
+def db_uid():
+    return st.session_state["user"]["id"]
+
+
+def db_try(fn, default=None):
+    """Run a DB call; never crash the quiz because of a database hiccup."""
+    try:
+        return fn()
+    except Exception as e:
+        st.session_state["_db_err"] = str(e)[:200]
+        return default
+
+
+def fetch_all(make_query, page=1000, cap=20000):
+    rows = []
+    for start in range(0, cap, page):
+        data = make_query().range(start, start + page - 1).execute().data or []
+        rows += data
+        if len(data) < page:
+            break
+    return rows
+
+
+def _local_time(iso):
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b, %H:%M")
+    except Exception:
+        return str(iso)[:16].replace("T", " ")
+
+
+def db_load_user_data():
+    ss = st.session_state
+    sb, uid = ss["sb"], db_uid()
+    prof = db_try(lambda: sb.table("profiles").select("xp").eq("user_id", uid).execute().data, [])
+    if prof:
+        ss.total_xp = int(prof[0].get("xp") or 0)
+    else:
+        ss.total_xp = 0
+        db_try(lambda: sb.table("profiles").upsert({"user_id": uid, "xp": 0}).execute())
+    rows = db_try(lambda: sb.table("quiz_history").select("*").eq("user_id", uid).order("created_at", desc=True).limit(200).execute().data, []) or []
+    hist = []
+    for r in reversed(rows):
+        try:
+            hist.append(
+                {
+                    "id": r["id"], "time": _local_time(r.get("created_at", "")), "topic": r.get("topic") or "Quiz",
+                    "difficulty": r.get("difficulty") or "-", "score": int(r.get("score") or 0), "total": max(1, int(r.get("total") or 1)),
+                    "marks": float(r.get("marks") or 0), "max": float(r.get("max_marks") or 0),
+                    "acc": int(r.get("accuracy") or 0), "pct": int(r.get("pct") or 0),
+                }
+            )
+        except Exception:
+            continue
+    ss.history = hist
+    bms = db_try(lambda: sb.table("bookmarks").select("data").eq("user_id", uid).execute().data, []) or []
+    ss.bookmarks = {b["data"]["question"]: b["data"] for b in bms if isinstance(b.get("data"), dict) and b["data"].get("question")}
+    ss.is_admin = bool(db_try(lambda: sb.table("admins").select("user_id").eq("user_id", uid).execute().data, []))
+
+
+def db_save_result(entry):
+    if not db_on():
+        return None
+    ss, uid = st.session_state, db_uid()
+    row = {
+        "user_id": uid, "topic": entry["topic"], "difficulty": entry["difficulty"], "score": entry["score"], "total": entry["total"],
+        "marks": entry["marks"], "max_marks": entry["max"], "accuracy": entry["acc"], "pct": entry["pct"],
+    }
+    res = db_try(lambda: ss["sb"].table("quiz_history").insert(row).execute().data)
+    db_try(lambda: ss["sb"].table("profiles").upsert({"user_id": uid, "xp": ss.total_xp, "updated_at": datetime.now(timezone.utc).isoformat()}).execute())
+    return res[0]["id"] if res else None
+
+
+def db_undo_result(hist_id):
+    if not db_on():
+        return
+    ss, uid = st.session_state, db_uid()
+    if hist_id:
+        db_try(lambda: ss["sb"].table("quiz_history").delete().eq("id", hist_id).eq("user_id", uid).execute())
+    db_try(lambda: ss["sb"].table("profiles").upsert({"user_id": uid, "xp": ss.total_xp, "updated_at": datetime.now(timezone.utc).isoformat()}).execute())
+
+
+def db_clear_history():
+    if db_on():
+        ss, uid = st.session_state, db_uid()
+        db_try(lambda: ss["sb"].table("quiz_history").delete().eq("user_id", uid).execute())
+
+
+def db_sync_bookmark(q, added):
+    if not db_on():
+        return
+    ss, uid = st.session_state, db_uid()
+    h = qhash(q["question"])
+    if added:
+        db_try(lambda: ss["sb"].table("bookmarks").upsert({"user_id": uid, "qhash": h, "data": q}, on_conflict="user_id,qhash").execute())
+    else:
+        db_try(lambda: ss["sb"].table("bookmarks").delete().eq("user_id", uid).eq("qhash", h).execute())
+
+
+# ── "already seen" memory: same topic again => different questions ──
+def get_seen_questions(tkey, limit=80):
+    ss = st.session_state
+    if not tkey:
+        return []
+    if db_on():
+        uid = db_uid()
+        rows = db_try(
+            lambda: ss["sb"].table("seen_questions").select("question").eq("user_id", uid).eq("topic_key", tkey)
+            .order("created_at", desc=True).limit(limit).execute().data, [],
+        ) or []
+        return [r["question"] for r in rows if r.get("question")]
+    return list(reversed(ss.seen_local.get(tkey, [])))[:limit]
+
+
+def get_seen_hashes(tkey):
+    ss = st.session_state
+    if not tkey:
+        return set()
+    if db_on():
+        uid = db_uid()
+        rows = db_try(lambda: fetch_all(lambda: ss["sb"].table("seen_questions").select("qhash").eq("user_id", uid).eq("topic_key", tkey)), []) or []
+        return {r["qhash"] for r in rows}
+    return {qhash(x) for x in ss.seen_local.get(tkey, [])}
+
+
+def mark_seen(tkey, quiz):
+    ss = st.session_state
+    if not tkey or not quiz:
+        return
+    items = {qhash(q["question"]): q["question"] for q in quiz}
+    if db_on():
+        uid = db_uid()
+        rows = [{"user_id": uid, "topic_key": tkey, "qhash": h, "question": t[:400]} for h, t in items.items()]
+        db_try(lambda: ss["sb"].table("seen_questions").upsert(rows, on_conflict="user_id,topic_key,qhash", ignore_duplicates=True).execute())
+    else:
+        lst = ss.seen_local.setdefault(tkey, [])
+        have = {qhash(x) for x in lst}
+        lst += [t for h, t in items.items() if h not in have]
+        del lst[:-500]
+
+
+def reset_seen(tkey):
+    ss = st.session_state
+    if db_on():
+        uid = db_uid()
+        db_try(lambda: ss["sb"].table("seen_questions").delete().eq("user_id", uid).eq("topic_key", tkey).execute())
+    else:
+        ss.seen_local.pop(tkey, None)
+
+
+# ── shared PYQ bank (admins write, everyone reads) ──
+def bank_hash(x):
+    return qhash(f"{x['exam']}|{x['question']}")
+
+
+def db_load_bank(exam):
+    ss = st.session_state
+    if not db_on():
+        return []
+    cached = ss.bank_cache.get(exam)
+    if cached and time.time() - cached[0] < 600:
+        return cached[1]
+    rows = db_try(lambda: fetch_all(lambda: ss["sb"].table("pyq_bank").select("*").eq("exam", exam)), []) or []
+    items = normalize_pyq(
+        [
+            {
+                "exam": r.get("exam"), "subject": r.get("subject") or "General", "year": r.get("year") or "", "type": r.get("qtype") or "mcq",
+                "question": r.get("question"), "options": r.get("options") or [], "answer": r.get("answer"),
+                "explanation": r.get("explanation") or "", "tolerance": r.get("tolerance") or 0,
+            }
+            for r in rows
+        ]
+    )
+    ss.bank_cache[exam] = (time.time(), items)
+    return items
+
+
+def db_save_bank(items):
+    ss = st.session_state
+    rows = [
+        {
+            "qhash": bank_hash(x), "exam": x["exam"], "subject": x["subject"], "year": x["year"], "qtype": x.get("type", "mcq"),
+            "question": x["question"], "options": x.get("options") or [], "answer": x["answer"],
+            "explanation": x.get("explanation") or "", "tolerance": x.get("tol") or 0,
+        }
+        for x in items
+    ]
+    for i in range(0, len(rows), 500):
+        ss["sb"].table("pyq_bank").upsert(rows[i : i + 500], on_conflict="qhash", ignore_duplicates=True).execute()
+    ss.bank_cache = {}
+    return len(rows)
+
+
+# ── login ──
+def normalize_phone(s):
+    d = re.sub(r"[^\d+]", "", s or "")
+    if d.startswith("+"):
+        digits = d[1:]
+        return "+" + digits if digits.isdigit() and 10 <= len(digits) <= 15 else None
+    d = d.lstrip("0")
+    if d.startswith("91") and len(d) == 12:
+        return "+" + d
+    if len(d) == 10 and d.isdigit():
+        return "+91" + d
+    return None
+
+
+def mask_ident(ident):
+    if "@" in ident:
+        name, dom = ident.split("@", 1)
+        return name[:1] + "***@" + dom
+    return ident[:3] + "*" * max(len(ident) - 7, 2) + ident[-4:]
+
+
+def auth_friendly(e, channel, verifying=False):
+    msg = str(e)
+    low = msg.lower()
+    provider_missing = any(k in low for k in (
+        "provider", "not configured", "isn't set up", "not set up", "smtp", "email_not_configured",
+        "sms_not_configured", "unsupported phone", "twilio", "email provider", "sms provider",
+    ))
+    if not verifying and provider_missing:
+        if channel == "phone":
+            return ("Phone OTP service isn't configured. In Supabase, open Authentication → Sign In / Providers "
+                    "and configure an SMS provider (for example Twilio). Until then, use email login.")
+        return ("Email OTP service isn't configured. In Supabase, open Authentication → SMTP Settings and "
+                "configure SMTP (or enable the email provider). These settings belong in Supabase Auth, not app Secrets. "
+                "Keep only GROQ_API_KEY, SUPABASE_URL, and SUPABASE_ANON_KEY in app Secrets.")
+    if any(k in low for k in ("rate limit", "too many", "after", "seconds")) and not verifying:
+        return "Bahut jaldi-jaldi OTP maanga. Thodi der (kuch minute) baad dobara try karo."
+    if verifying and any(k in low for k in ("expired", "invalid", "token", "otp")):
+        return "OTP galat hai ya expire ho gaya. Naya OTP mangao."
+    if "signups not allowed" in low or "signup" in low and "disabled" in low:
+        return "Naye users ka signup abhi band hai (Supabase setting)."
+    return f"Error: {msg}"
+
+
+def sb_client():
+    ss = st.session_state
+    if ss.get("sb") is None:
+        ss["sb"] = create_client(SB_URL, SB_KEY)  # one client PER session, never shared between users
+    return ss["sb"]
+
+
+def otp_send(channel, ident):
+    payload = {"email": ident} if channel == "email" else {"phone": ident}
+    payload["options"] = {"should_create_user": True}
+    sb_client().auth.sign_in_with_otp(payload)
+
+
+def otp_verify(channel, ident, code):
+    sb = sb_client()
+    last = None
+    for kind in (("email", "signup", "magiclink") if channel == "email" else ("sms",)):
+        try:
+            payload = {"token": code, "type": kind, ("email" if channel == "email" else "phone"): ident}
+            res = sb.auth.verify_otp(payload)
+            if res and res.session and res.user:
+                return res
+        except Exception as e:
+            last = e
+    raise last or ValueError("OTP galat hai.")
+
+
+def remember_login(cm, refresh_token):
+    if cm is None or not refresh_token:
+        return
+    try:
+        cm.set("qa_rt", refresh_token, expires_at=datetime.now() + timedelta(days=30), key=f"set_rt_{int(time.time() * 1000)}")
+    except Exception:
+        pass
+
+
+def complete_login(session, user, cm):
+    ss = st.session_state
+    ss["user"] = {"id": str(user.id), "email": getattr(user, "email", "") or "", "phone": getattr(user, "phone", "") or ""}
+    ss["tokens"] = {"refresh": session.refresh_token, "access": session.access_token, "exp": float(session.expires_at or (time.time() + 3000))}
+    try:
+        ss["sb"].postgrest.auth(session.access_token)
+    except Exception:
+        pass
+    ss["_just_logged_out"] = False
+    remember_login(cm, session.refresh_token)
+    db_load_user_data()
+
+
+def do_logout(cm=None, rerun=True):
+    ss = st.session_state
+    try:
+        ss["sb"].auth.sign_out({"scope": "local"})
+    except Exception:
+        pass
+    if cm is not None:
+        try:
+            cm.delete("qa_rt", key=f"del_rt_{int(time.time() * 1000)}")
+            time.sleep(0.6)  # give the browser a moment to apply the cookie change
+        except Exception:
+            pass
+    ss.clear()
+    ss["_just_logged_out"] = True
+    if rerun:
+        st.rerun()
+
+
+def ensure_fresh_token(cm):
+    ss = st.session_state
+    tk = ss.get("tokens") or {}
+    if time.time() < tk.get("exp", 0) - 90:
+        return
+    try:
+        res = ss["sb"].auth.refresh_session(tk["refresh"])
+        sess = res.session
+        ss["tokens"] = {"refresh": sess.refresh_token, "access": sess.access_token, "exp": float(sess.expires_at or (time.time() + 3000))}
+        try:
+            ss["sb"].postgrest.auth(sess.access_token)
+        except Exception:
+            pass
+        remember_login(cm, sess.refresh_token)
+    except Exception:
+        do_logout(cm, rerun=False)  # session expired -> show the login screen
+
+
+def try_cookie_login(cm):
+    ss = st.session_state
+    if cm is None or ss.get("_just_logged_out") or ss.get("_cookie_tried"):
+        return
+    rt = cm.get("qa_rt")
+    if not rt:
+        return
+    ss["_cookie_tried"] = True
+    try:
+        res = sb_client().auth.refresh_session(rt)
+        complete_login(res.session, res.user, cm)
+    except Exception:
+        try:
+            cm.delete("qa_rt", key="del_bad_rt")
+        except Exception:
+            pass
+
+
+def render_login(cm):
+    """Draws the login screen. Returns True the moment the user is logged in."""
+    ss = st.session_state
+    st.selectbox(ui("app_language"), ["Hinglish", "English", "Hindi"], key="app_language")
+    st.markdown(
+        f"""<div class="qf-hero"><div class="qf-title qf-display">{APP_NAME}</div>
+<div class="qf-sub">{ui("login_sub")}</div></div>""",
+        unsafe_allow_html=True,
+    )
+    otp = ss.get("otp") or {}
+    with st.container(key="panel_login"):
+        if not otp:
+            ch = st.radio(ui("login_method"), [ui("email_login"), ui("phone_login")], horizontal=True, key="login_ch")
+            is_email = ch.startswith("📧")
+            raw = st.text_input(
+                ui("email_address") if is_email else ui("mobile_number"), key="login_id_email" if is_email else "login_id_phone",
+                placeholder="you@example.com" if is_email else "98765 43210  (+91…)",
+            )
+            if not is_email:
+                st.caption(ui("phone_hint"))
+            if st.button(ui("send_otp"), type="primary", use_container_width=True, key="otp_send_btn"):
+                ident = (raw or "").strip().lower() if is_email else normalize_phone(raw)
+                if (is_email and not EMAIL_RE.match(ident or "")) or (not is_email and not ident):
+                    st.error(ui("wrong_email") if is_email else ui("wrong_phone"))
+                else:
+                    channel = "email" if is_email else "phone"
+                    with st.spinner(ui("sending_otp")):
+                        try:
+                            otp_send(channel, ident)
+                            ss["otp"] = {"channel": channel, "ident": ident, "sent": time.time()}
+                            st.rerun()
+                        except Exception as e:
+                            st.error(auth_friendly(e, channel))
+            return False
+
+        st.success(f"{ui('otp_sent')} **{mask_ident(otp['ident'])}**")
+        code = st.text_input(ui("enter_otp"), max_chars=10, key="otp_code", placeholder="123456")
+        c1, c2 = st.columns(2)
+        if c1.button(ui("verify"), type="primary", use_container_width=True, key="otp_verify_btn"):
+            token = re.sub(r"\s", "", code or "")
+            if not token:
+                st.warning(ui("enter_first"))
+            else:
+                with st.spinner(ui("verifying")):
+                    try:
+                        res = otp_verify(otp["channel"], otp["ident"], token)
+                        complete_login(res.session, res.user, cm)
+                        ss["otp"] = {}
+                        return True
+                    except Exception as e:
+                        st.error(auth_friendly(e, otp["channel"], verifying=True))
+        if c2.button(ui("resend"), use_container_width=True, key="otp_resend_btn"):
+            wait = 60 - (time.time() - otp.get("sent", 0))
+            if wait > 0:
+                st.warning(f"{int(wait) + 1} second baad dobara try karo.")
+            else:
+                try:
+                    otp_send(otp["channel"], otp["ident"])
+                    ss["otp"]["sent"] = time.time()
+                    st.success("Naya OTP bhej diya.")
+                except Exception as e:
+                    st.error(auth_friendly(e, otp["channel"]))
+        if st.button(ui("change_contact"), key="otp_back"):
+            ss["otp"] = {}
+            st.rerun()
+    return False
+
+
+def ensure_auth():
+    """Login gate. Returns the cookie manager (or None). Stops the script until the user is logged in."""
+    ss = st.session_state
+    if not AUTH_CONFIGURED:
+        return None
+    if create_client is None:
+        st.error("`supabase` package install nahi hai. requirements.txt me `supabase` aur `extra-streamlit-components` add karo.")
+        st.stop()
+    cm = None
+    if stx is not None:
+        try:
+            cm = stx.CookieManager(key="qa_cm")
+        except Exception:
+            cm = None
+    if ss.get("user"):
+        ensure_fresh_token(cm)
+        if ss.get("user"):
+            return cm
+    try_cookie_login(cm)
+    if ss.get("user"):
+        return cm
+    box = st.empty()
+    with box.container():
+        logged_in = render_login(cm)
+    if not logged_in:
+        st.stop()
+    box.empty()
+    return cm
+
+
+# ─────────────────────────────────────────────────────────────
 # QUIZ FLOW
 # ─────────────────────────────────────────────────────────────
 def start_quiz(quiz, meta):
@@ -845,6 +1314,7 @@ def start_quiz(quiz, meta):
     st.session_state.update(
         quiz=quiz, quiz_id=st.session_state.quiz_id + 1, start_time=time.time(), stage="quiz", meta=meta, q_key=None
     )
+    mark_seen(meta.get("tkey"), quiz)
 
 
 def record_time(i):
@@ -959,12 +1429,12 @@ def finish_quiz():
 
     old_level = level_of(ss.total_xp)
     ss.total_xp += xp
-    ss.history.append(
-        {
-            "time": datetime.now().strftime("%d %b, %H:%M"), "topic": ss.meta.get("label", "Quiz"), "difficulty": diff,
-            "score": correct, "total": total, "marks": marks, "max": max_marks, "acc": accuracy, "pct": pct,
-        }
-    )
+    entry = {
+        "time": datetime.now().strftime("%d %b, %H:%M"), "topic": ss.meta.get("label", "Quiz"), "difficulty": diff,
+        "score": correct, "total": total, "marks": marks, "max": max_marks, "acc": accuracy, "pct": pct,
+    }
+    entry["id"] = db_save_result(entry)
+    ss.history.append(entry)
     ss.result = {
         "score": correct, "total": total, "pct": pct, "xp": xp, "best_streak": best, "avg_time": avg_time, "hints": hints,
         "marks": marks, "max_marks": max_marks, "neg_lost": neg_lost, "attempted": attempted, "accuracy": accuracy,
@@ -973,7 +1443,6 @@ def finish_quiz():
         "badges": compute_badges(pct, best, avg_time, hints, diff, survival_win, n_types, correct == total),
     }
     queue_sound("win" if pct >= 50 else "lose")
-    persist_user()
     ss.stage = "result"
 
 
@@ -1088,9 +1557,19 @@ def _load_pyq_file(path, mtime):
         return []
 
 
-def load_pyq_dataset():
+def load_pyq_dataset(exam=None):
+    """PYQs from pyq_data.json + the shared bank (database) + this session's uploads, de-duplicated."""
     base = _load_pyq_file(PYQ_FILE, os.path.getmtime(PYQ_FILE)) if os.path.exists(PYQ_FILE) else []
-    return list(base) + list(st.session_state.get("pyq_uploaded", []))
+    bank = db_load_bank(exam) if exam else []
+    out, seen = [], set()
+    for x in list(base) + list(bank) + list(st.session_state.get("pyq_uploaded", [])):
+        if exam and x["exam"] != exam:
+            continue
+        h = bank_hash(x)
+        if h not in seen:
+            seen.add(h)
+            out.append(x)
+    return out
 
 
 def parse_pyq_upload(f):
@@ -1137,21 +1616,25 @@ def pyq_to_item(x):
 
 
 def pick_from_pool(pool, n, exclude):
-    fresh = [x for x in pool if x["question"].strip().lower() not in exclude]
+    """exclude = set of qhash() values that must not be picked again."""
+    fresh = [x for x in pool if qhash(x["question"]) not in exclude]
     return [pyq_to_item(x) for x in random.sample(fresh, min(n, len(fresh)))]
 
 
 def more_questions(n, avoid_texts):
-    """Next n questions for the running quiz: unseen real PYQs first (if any), then AI for the rest."""
+    """Next n questions for the running quiz: unseen real PYQs first (if any), then AI for the rest (only if allowed)."""
     m = st.session_state.meta
+    tkey = m.get("tkey")
+    seen_h = set(get_seen_hashes(tkey)) | {qhash(t) for t in avoid_texts}
     pool = m.get("pyq_pool") or []
-    got = pick_from_pool(pool, n, {t.strip().lower() for t in avoid_texts}) if pool else []
+    got = pick_from_pool(pool, n, seen_h) if pool else []
     need = n - len(got)
-    if need > 0 and (not pool or m.get("pyq_fill_ai", True)):
+    if need > 0 and (not pool or m.get("pyq_fill_ai", False)):
+        past = list(avoid_texts) + get_seen_questions(tkey)
         got += generate_with_progress(
             m.get("source", ""), need, m.get("difficulty", "Medium"), m.get("types", ["mcq"]),
             m.get("language", "English"), m.get("model", MODELS[0]), media=m.get("media"),
-            avoid=list(avoid_texts) + [g["question"] for g in got], adaptive=m.get("adaptive", False), exam=m.get("exam"),
+            avoid=past + [g["question"] for g in got], adaptive=m.get("adaptive", False), exam=m.get("exam"),
         )
     return got
 
@@ -1196,7 +1679,7 @@ def extend_quiz(n):
     if ss.result:
         ss.total_xp = max(0, ss.total_xp - ss.result["xp"])
         if ss.history:
-            ss.history.pop()
+            db_undo_result(ss.history.pop().get("id"))
 
     # whole-quiz timer: give the new batch its own proportional budget
     if m.get("quiz_limit"):
@@ -1208,6 +1691,7 @@ def extend_quiz(n):
     ss.start_time = time.time()
     start = len(ss.quiz)
     ss.quiz.extend(new)
+    mark_seen(m.get("tkey"), new)
     ss.idx = start
     ss.result = None
     ss.end_time = None
@@ -1238,9 +1722,10 @@ def toggle_bookmark(q):
     bm = st.session_state.bookmarks
     if q["question"] in bm:
         bm.pop(q["question"], None)
+        db_sync_bookmark(q, False)
     else:
         bm[q["question"]] = q
-    persist_user()
+        db_sync_bookmark(q, True)
 
 
 def current_choice(q, qid, i):
@@ -1484,212 +1969,26 @@ countdown = _fragment(run_every=1)(_countdown) if _fragment else None
 quiz_countdown = _fragment(run_every=1)(_quiz_countdown) if _fragment else None
 
 # ─────────────────────────────────────────────────────────────
-# ACCOUNT · OTP LOGIN · SAVED HISTORY · LANGUAGE · SIDEBAR BUTTON
+# LOGIN GATE
 # ─────────────────────────────────────────────────────────────
-import copy
-
-
-def _setting(name, default=None):
-    try:
-        v = st.secrets.get(name)
-    except Exception:
-        v = None
-    return v if v not in (None, "") else os.getenv(name, default)
-
-
-auth_store.set_settings_getter(_setting)
-REQUIRE_LOGIN = str(_setting("REQUIRE_LOGIN", "1")).strip().lower() not in ("0", "false", "no")
-_S = st.session_state
-
-
-def persist_user():
-    """Save XP / history / bookmarks to the logged-in user's account (silent if not logged in)."""
-    u = _S.get("user")
-    if not u:
-        return
-    try:
-        auth_store.save_state(
-            u["id"],
-            {
-                "v": 1, "xp": _S.total_xp, "history": list(_S.history)[-200:],
-                "bookmarks": list(_S.bookmarks.values())[:300], "ui_lang": _S.get("ui_lang", "hg"),
-            },
-        )
-    except Exception:
-        pass  # saving must never break the quiz
-
-
-def _login(user, token):
-    _S["user"], _S["token"] = user, token
-    try:
-        st.query_params["sid"] = token  # keeps the login after a page refresh (7 days)
-    except Exception:
-        pass
-    data = auth_store.load_state(user["id"])
-    if data:
-        try:
-            restore_progress(data)
-        except Exception:
-            pass
-        if data.get("ui_lang") in LANGS.values():
-            _S["ui_lang"] = data["ui_lang"]
-
-
-def _logout():
-    auth_store.end_session(_S.get("token"))
-    try:
-        if "sid" in st.query_params:
-            del st.query_params["sid"]
-    except Exception:
-        pass
-    lang = _S.get("ui_lang", "hg")
-    _S.update(fresh_run_state())
-    for k, v in GLOBAL_DEFAULTS.items():
-        _S[k] = copy.deepcopy(v)
-    for k in ("user", "token", "otp_sent", "otp_ident", "otp_kind", "otp_dev", "_prog_sig", "_prog_msg"):
-        _S.pop(k, None)
-    _S["ui_lang"] = lang
-
-
-def lang_picker(where, tag):
-    names = list(LANGS)
-    cur_code = _S.get("ui_lang", "hg")
-    cur_name = next(n for n, c in LANGS.items() if c == cur_code)
-    pick = where.selectbox(t("app_language"), names, index=names.index(cur_name), key=f"ui_lang_pick_{tag}")
-    if LANGS[pick] != cur_code:
-        _S["ui_lang"] = LANGS[pick]
-        persist_user()
-        st.rerun()
-
-
-def render_account_box():
-    lang_picker(st, "side")
-    u = _S.get("user")
-    if u:
-        st.markdown(t("account"))
-        st.caption(auth_store.mask(u.get("email") or u.get("phone") or ""))
-        st.caption(t("synced"))
-        if st.button(t("logout"), use_container_width=True, key="btn_logout"):
-            _logout()
-            st.rerun()
-        st.divider()
-
-
-def render_login():
-    components.html(
-        "<script>try{var D=window.parent.document;var o=D.getElementById('qf-sb-toggle');if(o)o.remove();D.body.classList.remove('qf-has-toggle');}catch(e){}</script>",
-        height=0,
-    )
-    st.markdown(
-        "<style>section[data-testid='stSidebar'],[data-testid='stSidebarCollapsedControl'],[data-testid='stExpandSidebarButton']{display:none !important}</style>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(theme.hero_html(APP_NAME, t("app_tag"), ""), unsafe_allow_html=True)
-    with st.container(key="panel_login"):
-        lang_picker(st, "login")
-        st.markdown(f"### {t('login_title')}")
-        st.caption(t("login_sub"))
-
-        if not _S.get("otp_sent"):
-            via = st.radio(
-                "via", [0, 1], horizontal=True, label_visibility="collapsed", key="login_via",
-                format_func=lambda i: [t("via_email"), t("via_phone")][i],
-            )
-            kind = "email" if via == 0 else "phone"
-            ident = st.text_input(t("email_lbl") if via == 0 else t("phone_lbl"), key=f"login_id_{kind}")
-            if st.button(t("send_otp"), type="primary", use_container_width=True, key="btn_send_otp"):
-                ok, msg, dev = auth_store.request_otp(ident, kind, APP_NAME)
-                if ok:
-                    norm = auth_store.normalize_email(ident) if kind == "email" else auth_store.normalize_phone(ident)
-                    _S.update(otp_sent=True, otp_ident=norm, otp_kind=kind, otp_dev=dev)
-                    st.rerun()
-                else:
-                    st.error(t("m_" + msg))
-        else:
-            ident, kind = _S["otp_ident"], _S["otp_kind"]
-            st.success(t("sent_to", to=auth_store.mask(ident)))
-            if _S.get("otp_dev"):
-                st.warning(t("dev_otp", code=_S["otp_dev"]))
-            code = st.text_input(t("otp_lbl"), max_chars=6, key="login_code")
-            if st.button(t("verify"), type="primary", use_container_width=True, key="btn_verify_otp"):
-                uid, msg = auth_store.verify_otp(ident, kind, code)
-                if uid:
-                    token = auth_store.create_session(uid)
-                    user = {"id": uid, "email": ident if kind == "email" else None, "phone": ident if kind == "phone" else None}
-                    for k in ("otp_sent", "otp_ident", "otp_kind", "otp_dev"):
-                        _S.pop(k, None)
-                    _login(user, token)
-                    st.rerun()
-                else:
-                    st.error(t("m_" + msg))
-            c1, c2 = st.columns(2)
-            if c1.button(t("resend"), use_container_width=True, key="btn_resend_otp"):
-                ok, msg, dev = auth_store.request_otp(ident, kind, APP_NAME)
-                if ok:
-                    _S["otp_dev"] = dev
-                    st.rerun()
-                else:
-                    st.error(t("m_" + msg))
-            if c2.button(t("change_id"), use_container_width=True, key="btn_change_id"):
-                for k in ("otp_sent", "otp_ident", "otp_kind", "otp_dev"):
-                    _S.pop(k, None)
-                st.rerun()
-
-
-_TOGGLE_JS = """<script>(function(){var P=window.parent,D=P.document;try{
-var old=D.getElementById('qf-sb-toggle'); if(old) old.remove();
-var b=D.createElement('button'); b.id='qf-sb-toggle'; b.type='button'; b.textContent='\\u2630';
-b.title=__TIP__; b.setAttribute('aria-label',__TIP__);
-var find=function(list){for(var i=0;i<list.length;i++){var e=D.querySelector(list[i]); if(e) return e;} return null;};
-b.onclick=function(){
-  var sb=D.querySelector('section[data-testid="stSidebar"]');
-  var open=!sb || sb.getAttribute('aria-expanded')!=='false';
-  var e=open
-    ? find(['[data-testid="stSidebarCollapseButton"] button','[data-testid="stSidebarCollapseButton"]'])
-    : find(['[data-testid="stExpandSidebarButton"]','[data-testid="stSidebarCollapsedControl"] button','[data-testid="stSidebarCollapsedControl"]']);
-  if(e) e.click();
-};
-D.body.appendChild(b); D.body.classList.add('qf-has-toggle');
-}catch(err){console.warn('qf-toggle',err);}})();</script><!--__NONCE__-->"""
-
-
-def render_sidebar_toggle():
-    js = _TOGGLE_JS.replace("__TIP__", json.dumps(t("toggle_tip"))).replace("__NONCE__", str(time.time()))
-    components.html(js, height=0)
-    components.html(theme.GLOW_JS, height=0)
-
-
-# restore a previous login after a refresh, then require login
-if not _S.get("user"):
-    try:
-        _tok = st.query_params.get("sid")
-    except Exception:
-        _tok = None
-    if _tok:
-        _u = auth_store.user_from_token(_tok)
-        if _u:
-            _login(_u, _tok)
-if REQUIRE_LOGIN and not _S.get("user"):
-    render_login()
-    st.stop()
-
+CM = ensure_auth()
 
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────
 with st.sidebar:
-    render_account_box()
     lvl = level_of(st.session_state.total_xp)
     st.markdown(f"### 🎖️ Level {lvl}")
     st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
 
-    st.markdown("### ⚙️ Quiz Settings")
-    num_questions = st.slider("Questions", 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
-    difficulty = st.select_slider("Difficulty", ["Easy", "Medium", "Hard"], value="Medium")
-    adaptive = st.toggle("🎚️ Adaptive difficulty", value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
-    type_sel = st.multiselect("Question types", list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
+    app_language = st.selectbox(ui("app_language"), ["Hinglish", "English", "Hindi"], key="app_language")
+    st.markdown(f"### {ui('quiz_settings')}")
+    num_questions = st.slider(ui("questions"), 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
+    difficulty = st.select_slider(ui("difficulty"), ["Easy", "Medium", "Hard"], value="Medium")
+    adaptive = st.toggle(ui("adaptive"), value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
+    type_sel = st.multiselect(ui("question_types"), list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
     type_keys = [TYPE_MAP[x] for x in type_sel] or ["mcq"]
-    language = st.selectbox("Language", ["English", "Hinglish", "Hindi"], index={"hg": 1, "en": 0, "hi": 2}.get(st.session_state.get("ui_lang", "hg"), 1))
+    language = st.selectbox(ui("quiz_language"), ["English", "Hinglish", "Hindi"])
     mode = st.radio(
         "Mode",
         ["Practice", "Exam", "Survival"],
@@ -1754,34 +2053,47 @@ with st.sidebar:
             )
         st.caption(f"⭐ Best score: {max(h['pct'] for h in st.session_state.history)}%")
         if st.button("Clear history"):
+            db_clear_history()
             st.session_state.history = []
-            persist_user()
             st.rerun()
     else:
         st.caption("Abhi koi quiz nahi diya. Pehla quiz banao!")
 
     st.divider()
-    st.markdown("### 💾 Progress backup")
-    st.caption("Tumhara XP, history aur saved sawal account me apne aap save hote hain. Chaho to yahan file backup bhi rakh sakte ho.")
-    _backup = json.dumps(
-        {"v": 1, "xp": st.session_state.total_xp, "history": st.session_state.history, "bookmarks": list(st.session_state.bookmarks.values())},
-        ensure_ascii=False,
-    )
-    st.download_button("⬇️ Progress save karo", _backup.encode("utf-8"), file_name="quiz_progress.json", mime="application/json", use_container_width=True)
-    _up = st.file_uploader("Progress load karo", type=["json"], key="prog_up")
-    if _up is not None:
-        _sig = (_up.name, _up.size)
-        if st.session_state.get("_prog_sig") != _sig:
-            try:
-                _nh, _nb = restore_progress(json.loads(_up.getvalue().decode("utf-8-sig")))
-                persist_user()
-                st.session_state["_prog_sig"] = _sig
-                st.session_state["_prog_msg"] = f"✅ {_nh} quiz history aur {_nb} saved sawal wapas aa gaye."
-                st.rerun()
-            except Exception as e:
-                st.error(f"Load nahi hua: {e}")
-    if st.session_state.get("_prog_msg"):
-        st.success(st.session_state["_prog_msg"])
+    if AUTH_ENABLED and st.session_state.get("user"):
+        _u = st.session_state["user"]
+        st.markdown("### 👤 Account")
+        st.caption(_u.get("email") or _u.get("phone") or "Logged in")
+        if st.session_state.get("is_admin"):
+            st.caption("🛠️ Admin — PYQ bank me sawal jod sakte ho")
+        if st.session_state.get("_db_err"):
+            st.warning("Database me save karne me dikkat aayi. Supabase SQL / keys check karo.")
+            st.caption(st.session_state["_db_err"])
+        if st.button("🚪 Logout", use_container_width=True):
+            do_logout(CM)
+    else:
+        if not AUTH_CONFIGURED:
+            st.caption("Guest mode: login/database abhi set nahi hai, isliye history browser band hote hi chali jayegi.")
+        st.markdown("### 💾 Progress backup")
+        st.caption("Apna XP, history aur saved questions file me save karo aur kabhi bhi wapas load karo.")
+        _backup = json.dumps(
+            {"v": 1, "xp": st.session_state.total_xp, "history": st.session_state.history, "bookmarks": list(st.session_state.bookmarks.values())},
+            ensure_ascii=False,
+        )
+        st.download_button("⬇️ Progress save karo", _backup.encode("utf-8"), file_name="quiz_progress.json", mime="application/json", use_container_width=True)
+        _up = st.file_uploader("Progress load karo", type=["json"], key="prog_up")
+        if _up is not None:
+            _sig = (_up.name, _up.size)
+            if st.session_state.get("_prog_sig") != _sig:
+                try:
+                    _nh, _nb = restore_progress(json.loads(_up.getvalue().decode("utf-8-sig")))
+                    st.session_state["_prog_sig"] = _sig
+                    st.session_state["_prog_msg"] = f"✅ {_nh} quiz history aur {_nb} saved sawal wapas aa gaye."
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Load nahi hua: {e}")
+        if st.session_state.get("_prog_msg"):
+            st.success(st.session_state["_prog_msg"])
 
 # ─────────────────────────────────────────────────────────────
 # HERO
@@ -1789,14 +2101,18 @@ with st.sidebar:
 _order = {"setup": 0, "quiz": 1, "result": 2}
 _cur = _order.get(st.session_state.stage, -1)
 _steps = ""
-for n, name in enumerate([t("step1"), t("step2"), t("step3")]):
+for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
     cls = "on" if n == _cur else ("done" if 0 <= _cur and n < _cur else "")
     _steps += f"<span class='qf-step {cls}'>{n + 1} · {name}</span>"
 
-_u = st.session_state.get("user") or {}
-_who = (_u.get("email") or "").split("@")[0] or auth_store.mask(_u.get("phone") or "") if _u else None
 st.markdown(
-    theme.hero_html(APP_NAME, t("app_tag"), _steps, who=_who or theme._x("guest"), level=level_of(st.session_state.total_xp)),
+    f"""
+<div class="qf-hero">
+  <div class="qf-title qf-display">{APP_NAME}</div>
+  <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
+  <div class="qf-steps">{_steps}</div>
+</div>
+""",
     unsafe_allow_html=True,
 )
 
@@ -1816,14 +2132,21 @@ def base_meta(cfg, label, source, media=None, **extra):
 def launch_quiz(input_text, label, cfg, media=None):
     with st.spinner("AI sawal bana raha hai…"):
         try:
+            if input_text.startswith("Topic:"):
+                ident = label
+            elif media:
+                ident = f"{label}|{hashlib.md5(media['bytes']).hexdigest()[:8]}"
+            else:
+                ident = f"{label}|{qhash(input_text[:2000])[:8]}"
+            tkey = topic_key_for("ai", ident)
             quiz = generate_with_progress(
                 input_text, cfg["num_questions"], cfg["difficulty"], cfg["type_keys"], cfg["language"], cfg["model"],
-                media=media, adaptive=cfg["adaptive"],
+                media=media, adaptive=cfg["adaptive"], avoid=get_seen_questions(tkey),
             )
             if not quiz:
                 st.error("Valid sawal nahi ban paye. Dobara try karo.")
                 return
-            start_quiz(quiz, base_meta(cfg, label, input_text, media))
+            start_quiz(quiz, base_meta(cfg, label, input_text, media, tkey=tkey))
             st.session_state["_picked"] = ""
             st.rerun()
         except json.JSONDecodeError:
@@ -1929,7 +2252,7 @@ def build_pyq_quiz(exam, cfg, pool, fill_ai, plan):
     quiz, notes = [], []
     for subj, t, n in plan:
         sec_pool = [x for x in pool if x.get("type", "mcq") == t and (subj == "Mixed" or x["subject"].strip().lower() == subj.lower())]
-        taken = {q["question"].strip().lower() for q in quiz}
+        taken = {qhash(q["question"]) for q in quiz}
         got = pick_from_pool(sec_pool, n, taken)
         need = n - len(got)
         if need > 0 and (fill_ai or not pool):
@@ -1956,30 +2279,43 @@ def build_pyq_quiz(exam, cfg, pool, fill_ai, plan):
 
 def render_pyq_tab(cfg):
     ss = st.session_state
-    st.markdown("### 🏛️ Govt & Entrance Exam Practice")
+    st.markdown("### 🏛️ Govt & Entrance Exam — PYQ Practice")
     st.caption(
-        "SSC, RRB, Banking, UP Police, UPSC, UP CNET, NEET aur JEE. Marking har exam ke hisaab se lagti hai (galat par negative bhi). "
-        "Apne dataset ke **asli purane sawal** par 📜 tag aata hai; AI ke sawal exam-pattern practice hote hain, asli paper ke nahi."
+        "Yahan **pichhle saalon ke asli sawal (PYQ)** aate hain, PYQ bank se (📜 tag ke saath). "
+        "Jo PYQ tum pehle kar chuke ho wo dobara nahi aate. Marking har exam ke hisaab se lagti hai."
     )
-    dataset = load_pyq_dataset()
 
     with st.container(key="panel_pyq"):
         exam = st.selectbox("Target exam", EXAM_LIST, key="pyq_exam")
         conf = EXAM_CONFIG.get(exam)
-        known = sorted({q["subject"] for q in dataset if q["exam"] == exam})
+        dataset = load_pyq_dataset(exam)
+        known = sorted({q["subject"] for q in dataset})
         base_subjects = EXAM_SUBJECTS.get(exam, [])
         subjects = ["All subjects"] + base_subjects + [k for k in known if k not in base_subjects]
         subject = st.selectbox("Subject", subjects, key=f"pyq_subject_{exam}")
-        pool_all = [q for q in dataset if q["exam"] == exam and (subject == "All subjects" or q["subject"].strip().lower() == subject.lower())]
+        pool_all = [q for q in dataset if subject == "All subjects" or q["subject"].strip().lower() == subject.lower()]
         years = sorted({q["year"] for q in pool_all if q["year"]}, reverse=True)
         sel_years = st.multiselect("Year (optional)", years, key=f"pyq_years_{exam}_{subject}") if years else []
         pool = [q for q in pool_all if not sel_years or q["year"] in sel_years]
 
-        if pool:
-            st.success(f"✅ Tumhare dataset me {len(pool)} asli PYQ mile.")
+        tkey = f"pyq::{exam}"
+        seen_h = get_seen_hashes(tkey)
+        fresh_pool = [q for q in pool if qhash(q["question"]) not in seen_h]
+        if not dataset:
+            st.error(f"PYQ bank me **{exam}** ke sawal abhi nahi hain. Admin se PYQ upload karwao (neeche 'PYQ bank' wala box dekho).")
+        elif not pool:
+            st.info("Is subject/year ke liye PYQ nahi mile. Filter badlo.")
+        elif not fresh_pool:
+            st.warning(f"Tum is filter ke saare {len(pool)} PYQ kar chuke ho.")
+            if st.button("🔁 Seen list reset karo (PYQ phir se aayenge)", key="pyq_reset_seen"):
+                reset_seen(tkey)
+                st.rerun()
         else:
-            st.info("Is filter ke liye dataset me PYQ nahi hain — AI exam-pattern wale practice sawal banayega (asli paper ke nahi).")
-        fill_ai = st.toggle("Dataset me kam pade to AI se bharo", value=True, key="pyq_fill") if pool else True
+            st.success(f"✅ {len(fresh_pool)} naye PYQ available ({len(pool) - len(fresh_pool)} tum pehle kar chuke ho).")
+        fill_ai = st.toggle(
+            "PYQ kam pade to AI practice sawal se bharo (ye asli PYQ nahi hote)", value=False, key=f"pyq_fill_{exam}",
+            help="Band rakhoge to sirf asli PYQ aayenge — kam hue to kam sawal milenge.",
+        )
 
         # ── marking scheme ──
         official, neg_override, num_neg = False, None, True
@@ -2012,22 +2348,26 @@ def render_pyq_tab(cfg):
     plan = plan_sections(conf, cfg["num_questions"], subject, use_pattern, factor)
     plan_n = sum(n for _, _, n in plan)
     full_total = sum(sum(m.values()) for _, m in conf["sections"]) if conf else 0
-    minutes = max(5, round(conf["minutes"] * plan_n / full_total)) if (conf and use_pattern and full_total) else 0
 
     if use_pattern:
-        st.info(f"🧾 {plan_n} sawal · {minutes} min · max {fmt_marks(plan_n * marks_used)} marks · +{fmt_marks(marks_used)} / −{fmt_marks(marks_used * neg_used)}")
-        if plan_n > 60 and not pool:
-            st.caption("⏳ Itne sawal AI se banane me kuch minute lag sakte hain (rate limit lag jaye to Half/Quarter size try karo).")
+        mins_plan = max(5, round(conf["minutes"] * plan_n / full_total)) if full_total else 0
+        st.info(f"🧾 Mock: {plan_n} sawal · {mins_plan} min · max {fmt_marks(plan_n * marks_used)} marks · +{fmt_marks(marks_used)} / −{fmt_marks(marks_used * neg_used)}")
+        if len(fresh_pool) < plan_n and not fill_ai:
+            st.caption(f"ℹ️ Abhi {len(fresh_pool)} naye PYQ hain, isliye mock utna hi chhota banega (AI se bharna band hai).")
     else:
-        st.caption(f"Practice me {plan_n} sawal bante hain (sidebar ka 'Questions' slider se badlo).")
+        st.caption(f"Practice me {min(plan_n, len(fresh_pool)) if not fill_ai else plan_n} sawal aayenge (sidebar ke 'Questions' slider se badlo).")
 
-    with st.expander("➕ Apna PYQ dataset jodo (JSON / CSV)"):
+    with st.expander("📚 PYQ bank / apna dataset jodo (JSON / CSV)"):
         st.caption(
-            "Asli PYQ ke liye apna dataset do. Har sawal me: exam, subject, year, question, options, answer (text ya A-D), explanation. "
+            "Har sawal me: exam, subject, year, question, options, answer (text ya A-D), explanation. "
             "Numerical sawal ke liye `type: num` aur answer me number. "
             f"`exam` ka naam in me se ek ho: {', '.join(EXAM_LIST)}. "
-            "Hamesha ke liye rakhna ho to file ko repo me `pyq_data.json` naam se daalo."
+            "File ko repo me `pyq_data.json` naam se daaloge to wo hamesha rahegi."
         )
+        if ss.get("is_admin"):
+            st.success("🛠️ Tum admin ho: upload ke baad 'Shared PYQ bank me save karo' dabao — sawal sabhi users ko milenge.")
+        elif db_on():
+            st.caption("Shared bank me sawal sirf admin jod sakta hai. Neeche upload sirf tumhare is session ke liye hai.")
         st.download_button("📄 Template (JSON)", PYQ_TEMPLATE.encode("utf-8"), file_name="pyq_template.json", mime="application/json")
         up = st.file_uploader("PYQ file", type=["json", "csv"], key="pyq_up")
         if up is not None:
@@ -2035,9 +2375,10 @@ def render_pyq_tab(cfg):
             if ss.get("_pyq_sig") != sig:
                 try:
                     items = parse_pyq_upload(up)
-                    have = {q["question"].strip().lower() for q in ss.pyq_uploaded}
-                    fresh = [q for q in items if q["question"].strip().lower() not in have]
+                    have = {bank_hash(q) for q in ss.pyq_uploaded}
+                    fresh = [q for q in items if bank_hash(q) not in have]
                     ss.pyq_uploaded += fresh
+                    ss["_pyq_items"] = items
                     ss["_pyq_sig"] = sig
                     ss["_pyq_msg"] = f"✅ {len(fresh)} sawal jude ({len(items) - len(fresh)} duplicate chhode)."
                     st.rerun()
@@ -2045,33 +2386,48 @@ def render_pyq_tab(cfg):
                     st.error(f"File padh nahi paya: {e}")
         if ss.get("_pyq_msg"):
             st.success(ss["_pyq_msg"])
+        if ss.get("is_admin") and ss.get("_pyq_items"):
+            if st.button(f"📤 Shared PYQ bank me save karo ({len(ss['_pyq_items'])} sawal)", key="pyq_bank_save"):
+                try:
+                    st.success(f"✅ {db_save_bank(ss['_pyq_items'])} sawal bank me save/update ho gaye.")
+                    ss["_pyq_items"] = []
+                except Exception as e:
+                    st.error(f"Bank me save nahi hua (admin access / SQL check karo): {e}")
         if ss.pyq_uploaded:
             st.caption(f"Is session me {len(ss.pyq_uploaded)} uploaded PYQ hain.")
             if st.button("🗑️ Uploaded PYQ hatao", key="pyq_clear"):
                 ss.pyq_uploaded = []
                 ss["_pyq_sig"] = None
                 ss["_pyq_msg"] = ""
+                ss["_pyq_items"] = []
                 st.rerun()
 
     st.write("")
-    if st.button(f"🚀 {exam} {'mock test' if use_pattern else 'practice'} shuru karo", type="primary", use_container_width=True, key="btn_start_pyq"):
+    can_start = bool(fresh_pool) or fill_ai
+    if st.button(
+        f"🚀 {exam} {'mock test' if use_pattern else 'PYQ practice'} shuru karo", type="primary", use_container_width=True,
+        key="btn_start_pyq", disabled=not can_start,
+    ):
         label_exam = exam if subject == "All subjects" else f"{exam} · {subject}"
         subj_txt = "mixed subjects of the syllabus" if subject == "All subjects" else subject
         src_main = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
         with st.spinner("Sawal taiyaar ho rahe hain…"):
             try:
-                quiz, notes = build_pyq_quiz(exam, cfg, pool, fill_ai, plan)
+                quiz, notes = build_pyq_quiz(exam, cfg, fresh_pool, fill_ai, plan)
             except Exception as e:
                 st.error(friendly_error(e))
                 return
         if not quiz:
-            st.error("Is filter par koi sawal nahi bana. " + " ".join(notes))
+            st.error("Abhi koi sawal nahi mila. " + " ".join(notes))
             return
+        if len(quiz) < plan_n:
+            notes.append(f"{plan_n} me se {len(quiz)} sawal hi mile (naye PYQ itne hi the).")
         if not use_pattern:
             random.shuffle(quiz)
+        minutes = max(5, round(conf["minutes"] * len(quiz) / full_total)) if (use_pattern and conf and full_total) else 0
         meta = base_meta(
-            cfg, f"{label_exam} · {'Mock' if use_pattern else 'Practice'}", src_main, None,
-            types=sorted({t for _, t, _ in plan}), adaptive=False, exam=label_exam, pyq_pool=pool, pyq_fill_ai=fill_ai,
+            cfg, f"{label_exam} · {'Mock' if use_pattern else 'PYQ'}", src_main, None,
+            types=sorted({t for _, t, _ in plan}), adaptive=False, exam=label_exam, pyq_pool=pool, pyq_fill_ai=fill_ai, tkey=tkey,
             mode="Exam" if use_pattern else cfg["mode"], marks=marks_used, neg=neg_used, no_neg_types=no_neg,
             time_limit=0 if use_pattern else cfg["time_limit"], quiz_limit=minutes * 60 if use_pattern else cfg["quiz_limit"],
             gen_note=" ".join(notes),
@@ -2237,7 +2593,15 @@ def render_doubt_tab(cfg):
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
-    st.markdown(theme.tiles_html(lvl, st.session_state.total_xp, len(hist), best_pct), unsafe_allow_html=True)
+    st.markdown(
+        f"""<div class="qf-tiles">
+  <div class="qf-tile"><div class="v">{lvl}</div><div class="l">Level</div></div>
+  <div class="qf-tile"><div class="v" style="color:#FFC857">{st.session_state.total_xp}</div><div class="l">Total XP</div></div>
+  <div class="qf-tile"><div class="v">{len(hist)}</div><div class="l">Quizzes khele</div></div>
+  <div class="qf-tile"><div class="v" style="color:#34D399">{best_pct}%</div><div class="l">Best score</div></div>
+</div>""",
+        unsafe_allow_html=True,
+    )
 
     cfg = {
         "num_questions": num_questions, "difficulty": difficulty, "adaptive": adaptive, "type_keys": type_keys,
@@ -2671,7 +3035,6 @@ else:
 # Browser layer (sound / voice / shortcuts) — keep at the very end
 # ─────────────────────────────────────────────────────────────
 _run_lang = st.session_state.meta.get("language", language) if st.session_state.stage == "quiz" else language
-render_sidebar_toggle()
 render_browser_layer(
     sound_on=sound_on,
     tts_lang="hi-IN" if _run_lang == "Hindi" else "en-IN",
