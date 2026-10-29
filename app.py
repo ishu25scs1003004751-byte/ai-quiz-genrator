@@ -16,6 +16,11 @@ import streamlit.components.v1 as components
 from pypdf import PdfReader
 from groq import Groq
 
+import auth_store
+import i18n
+from i18n import t, tr, LANGS
+import theme
+
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
@@ -27,6 +32,9 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="expanded",
 )
+
+i18n.install()
+st.session_state.setdefault("ui_lang", "hg")
 
 LIGHT = bool(st.session_state.get("light", False))
 
@@ -48,11 +56,28 @@ h1,h2,h3,.qf-display{ font-family:'Space Grotesk',sans-serif !important; letter-
 /* Hide watermark but keep the sidebar toggle usable (important on mobile) */
 #MainMenu, footer{ visibility:hidden; height:0; }
 header[data-testid="stHeader"]{ background:transparent !important; }
-[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarExpandButton"]{
+/* Hide Streamlit / Streamlit-Cloud chrome (Fork, GitHub, Deploy, menu, badges) */
+[data-testid="stToolbar"], [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], .stAppDeployButton,
+[data-testid="stDecoration"], [data-testid="stStatusWidget"], [class*="viewerBadge"], [class*="_profileContainer"],
+[class*="_profilePreview"], header a[href*="github.com"], a[href*="streamlit.io/cloud"], .stDeployButton{
+  display:none !important; visibility:hidden !important;
+}
+/* Native expand control = fallback only (the floating button below replaces it) */
+[data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"]{
   display:block !important; position:fixed !important; top:12px !important; left:12px !important; z-index:999999 !important;
   background-color:#1f2937 !important; border-radius:8px !important; border:1px solid var(--line) !important;
-  box-shadow:0 4px 12px rgba(0,0,0,.5) !important;
 }
+body.qf-has-toggle [data-testid="stSidebarCollapsedControl"], body.qf-has-toggle [data-testid="stExpandSidebarButton"]{
+  opacity:0 !important; pointer-events:none !important;
+}
+/* Floating sidebar button: always visible, whether the sidebar is open or closed */
+#qf-sb-toggle{
+  position:fixed; top:10px; left:10px; z-index:1000001; width:42px; height:42px; border-radius:13px; cursor:pointer;
+  font-size:20px; line-height:1; color:#fff; border:1px solid rgba(255,255,255,.25);
+  background:linear-gradient(135deg,#7C5CFF,#22D3EE); box-shadow:0 6px 18px rgba(0,0,0,.45);
+}
+#qf-sb-toggle:hover{ transform:scale(1.06); }
+section[data-testid="stSidebar"] > div:first-child{ padding-top:2.4rem; }
 
 .stApp{
   background:
@@ -60,7 +85,7 @@ header[data-testid="stHeader"]{ background:transparent !important; }
     radial-gradient(900px 480px at 100% 0%, rgba(34,211,238,.15), transparent 55%),
     var(--bg);
 }
-.block-container{ padding-top:1.4rem; max-width:860px; }
+.block-container{ padding-top:3.6rem; max-width:860px; }
 section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var(--line); }
 
 /* Hero */
@@ -88,7 +113,7 @@ section[data-testid="stSidebar"]{ background:#0E1330; border-right:1px solid var
 .qf-step.done{ color:var(--good); border-color:rgba(52,211,153,.5); }
 
 /* Glass panels */
-.st-key-panel, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
+.st-key-panel, .st-key-panel_login, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
   background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px 22px; backdrop-filter:blur(6px);
 }
 .st-key-optbox{ padding:14px 16px; counter-reset:opt; }
@@ -223,8 +248,10 @@ div[data-baseweb="select"] *{ color:var(--txt) !important; }
 """
 
 st.markdown(BASE_CSS, unsafe_allow_html=True)
+st.markdown(theme.PREMIUM_CSS, unsafe_allow_html=True)
 if LIGHT:
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+    st.markdown(theme.PREMIUM_LIGHT_CSS, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # API KEY / CLIENT
@@ -893,6 +920,7 @@ def finish_quiz():
         "badges": compute_badges(pct, best, avg_time, hints, diff, survival_win, n_types, correct == total),
     }
     queue_sound("win" if pct >= 50 else "lose")
+    persist_user()
     ss.stage = "result"
 
 
@@ -1159,6 +1187,7 @@ def toggle_bookmark(q):
         bm.pop(q["question"], None)
     else:
         bm[q["question"]] = q
+    persist_user()
 
 
 def current_choice(q, qid, i):
@@ -1402,9 +1431,201 @@ countdown = _fragment(run_every=1)(_countdown) if _fragment else None
 quiz_countdown = _fragment(run_every=1)(_quiz_countdown) if _fragment else None
 
 # ─────────────────────────────────────────────────────────────
+# ACCOUNT · OTP LOGIN · SAVED HISTORY · LANGUAGE · SIDEBAR BUTTON
+# ─────────────────────────────────────────────────────────────
+import copy
+
+
+def _setting(name, default=None):
+    try:
+        v = st.secrets.get(name)
+    except Exception:
+        v = None
+    return v if v not in (None, "") else os.getenv(name, default)
+
+
+auth_store.set_settings_getter(_setting)
+REQUIRE_LOGIN = str(_setting("REQUIRE_LOGIN", "1")).strip().lower() not in ("0", "false", "no")
+_S = st.session_state
+
+
+def persist_user():
+    """Save XP / history / bookmarks to the logged-in user's account (silent if not logged in)."""
+    u = _S.get("user")
+    if not u:
+        return
+    try:
+        auth_store.save_state(
+            u["id"],
+            {
+                "v": 1, "xp": _S.total_xp, "history": list(_S.history)[-200:],
+                "bookmarks": list(_S.bookmarks.values())[:300], "ui_lang": _S.get("ui_lang", "hg"),
+            },
+        )
+    except Exception:
+        pass  # saving must never break the quiz
+
+
+def _login(user, token):
+    _S["user"], _S["token"] = user, token
+    try:
+        st.query_params["sid"] = token  # keeps the login after a page refresh (7 days)
+    except Exception:
+        pass
+    data = auth_store.load_state(user["id"])
+    if data:
+        try:
+            restore_progress(data)
+        except Exception:
+            pass
+        if data.get("ui_lang") in LANGS.values():
+            _S["ui_lang"] = data["ui_lang"]
+
+
+def _logout():
+    auth_store.end_session(_S.get("token"))
+    try:
+        if "sid" in st.query_params:
+            del st.query_params["sid"]
+    except Exception:
+        pass
+    lang = _S.get("ui_lang", "hg")
+    _S.update(fresh_run_state())
+    for k, v in GLOBAL_DEFAULTS.items():
+        _S[k] = copy.deepcopy(v)
+    for k in ("user", "token", "otp_sent", "otp_ident", "otp_kind", "otp_dev", "_prog_sig", "_prog_msg"):
+        _S.pop(k, None)
+    _S["ui_lang"] = lang
+
+
+def lang_picker(where, tag):
+    names = list(LANGS)
+    cur_code = _S.get("ui_lang", "hg")
+    cur_name = next(n for n, c in LANGS.items() if c == cur_code)
+    pick = where.selectbox(t("app_language"), names, index=names.index(cur_name), key=f"ui_lang_pick_{tag}")
+    if LANGS[pick] != cur_code:
+        _S["ui_lang"] = LANGS[pick]
+        persist_user()
+        st.rerun()
+
+
+def render_account_box():
+    lang_picker(st, "side")
+    u = _S.get("user")
+    if u:
+        st.markdown(t("account"))
+        st.caption(auth_store.mask(u.get("email") or u.get("phone") or ""))
+        st.caption(t("synced"))
+        if st.button(t("logout"), use_container_width=True, key="btn_logout"):
+            _logout()
+            st.rerun()
+        st.divider()
+
+
+def render_login():
+    components.html(
+        "<script>try{var D=window.parent.document;var o=D.getElementById('qf-sb-toggle');if(o)o.remove();D.body.classList.remove('qf-has-toggle');}catch(e){}</script>",
+        height=0,
+    )
+    st.markdown(
+        "<style>section[data-testid='stSidebar'],[data-testid='stSidebarCollapsedControl'],[data-testid='stExpandSidebarButton']{display:none !important}</style>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(theme.hero_html(APP_NAME, t("app_tag"), ""), unsafe_allow_html=True)
+    with st.container(key="panel_login"):
+        lang_picker(st, "login")
+        st.markdown(f"### {t('login_title')}")
+        st.caption(t("login_sub"))
+
+        if not _S.get("otp_sent"):
+            via = st.radio(
+                "via", [0, 1], horizontal=True, label_visibility="collapsed", key="login_via",
+                format_func=lambda i: [t("via_email"), t("via_phone")][i],
+            )
+            kind = "email" if via == 0 else "phone"
+            ident = st.text_input(t("email_lbl") if via == 0 else t("phone_lbl"), key=f"login_id_{kind}")
+            if st.button(t("send_otp"), type="primary", use_container_width=True, key="btn_send_otp"):
+                ok, msg, dev = auth_store.request_otp(ident, kind, APP_NAME)
+                if ok:
+                    norm = auth_store.normalize_email(ident) if kind == "email" else auth_store.normalize_phone(ident)
+                    _S.update(otp_sent=True, otp_ident=norm, otp_kind=kind, otp_dev=dev)
+                    st.rerun()
+                else:
+                    st.error(t("m_" + msg))
+        else:
+            ident, kind = _S["otp_ident"], _S["otp_kind"]
+            st.success(t("sent_to", to=auth_store.mask(ident)))
+            if _S.get("otp_dev"):
+                st.warning(t("dev_otp", code=_S["otp_dev"]))
+            code = st.text_input(t("otp_lbl"), max_chars=6, key="login_code")
+            if st.button(t("verify"), type="primary", use_container_width=True, key="btn_verify_otp"):
+                uid, msg = auth_store.verify_otp(ident, kind, code)
+                if uid:
+                    token = auth_store.create_session(uid)
+                    user = {"id": uid, "email": ident if kind == "email" else None, "phone": ident if kind == "phone" else None}
+                    for k in ("otp_sent", "otp_ident", "otp_kind", "otp_dev"):
+                        _S.pop(k, None)
+                    _login(user, token)
+                    st.rerun()
+                else:
+                    st.error(t("m_" + msg))
+            c1, c2 = st.columns(2)
+            if c1.button(t("resend"), use_container_width=True, key="btn_resend_otp"):
+                ok, msg, dev = auth_store.request_otp(ident, kind, APP_NAME)
+                if ok:
+                    _S["otp_dev"] = dev
+                    st.rerun()
+                else:
+                    st.error(t("m_" + msg))
+            if c2.button(t("change_id"), use_container_width=True, key="btn_change_id"):
+                for k in ("otp_sent", "otp_ident", "otp_kind", "otp_dev"):
+                    _S.pop(k, None)
+                st.rerun()
+
+
+_TOGGLE_JS = """<script>(function(){var P=window.parent,D=P.document;try{
+var old=D.getElementById('qf-sb-toggle'); if(old) old.remove();
+var b=D.createElement('button'); b.id='qf-sb-toggle'; b.type='button'; b.textContent='\\u2630';
+b.title=__TIP__; b.setAttribute('aria-label',__TIP__);
+var find=function(list){for(var i=0;i<list.length;i++){var e=D.querySelector(list[i]); if(e) return e;} return null;};
+b.onclick=function(){
+  var sb=D.querySelector('section[data-testid="stSidebar"]');
+  var open=!sb || sb.getAttribute('aria-expanded')!=='false';
+  var e=open
+    ? find(['[data-testid="stSidebarCollapseButton"] button','[data-testid="stSidebarCollapseButton"]'])
+    : find(['[data-testid="stExpandSidebarButton"]','[data-testid="stSidebarCollapsedControl"] button','[data-testid="stSidebarCollapsedControl"]']);
+  if(e) e.click();
+};
+D.body.appendChild(b); D.body.classList.add('qf-has-toggle');
+}catch(err){console.warn('qf-toggle',err);}})();</script><!--__NONCE__-->"""
+
+
+def render_sidebar_toggle():
+    js = _TOGGLE_JS.replace("__TIP__", json.dumps(t("toggle_tip"))).replace("__NONCE__", str(time.time()))
+    components.html(js, height=0)
+    components.html(theme.GLOW_JS, height=0)
+
+
+# restore a previous login after a refresh, then require login
+if not _S.get("user"):
+    try:
+        _tok = st.query_params.get("sid")
+    except Exception:
+        _tok = None
+    if _tok:
+        _u = auth_store.user_from_token(_tok)
+        if _u:
+            _login(_u, _tok)
+if REQUIRE_LOGIN and not _S.get("user"):
+    render_login()
+    st.stop()
+
+
+# ─────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────
 with st.sidebar:
+    render_account_box()
     lvl = level_of(st.session_state.total_xp)
     st.markdown(f"### 🎖️ Level {lvl}")
     st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
@@ -1415,7 +1636,7 @@ with st.sidebar:
     adaptive = st.toggle("🎚️ Adaptive difficulty", value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
     type_sel = st.multiselect("Question types", list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
     type_keys = [TYPE_MAP[x] for x in type_sel] or ["mcq"]
-    language = st.selectbox("Language", ["English", "Hinglish", "Hindi"])
+    language = st.selectbox("Language", ["English", "Hinglish", "Hindi"], index={"hg": 1, "en": 0, "hi": 2}.get(st.session_state.get("ui_lang", "hg"), 1))
     mode = st.radio(
         "Mode",
         ["Practice", "Exam", "Survival"],
@@ -1481,13 +1702,14 @@ with st.sidebar:
         st.caption(f"⭐ Best score: {max(h['pct'] for h in st.session_state.history)}%")
         if st.button("Clear history"):
             st.session_state.history = []
+            persist_user()
             st.rerun()
     else:
         st.caption("Abhi koi quiz nahi diya. Pehla quiz banao!")
 
     st.divider()
     st.markdown("### 💾 Progress backup")
-    st.caption("Login abhi nahi hai — apna XP, history aur saved questions file me save karo aur kabhi bhi wapas load karo.")
+    st.caption("Tumhara XP, history aur saved sawal account me apne aap save hote hain. Chaho to yahan file backup bhi rakh sakte ho.")
     _backup = json.dumps(
         {"v": 1, "xp": st.session_state.total_xp, "history": st.session_state.history, "bookmarks": list(st.session_state.bookmarks.values())},
         ensure_ascii=False,
@@ -1499,6 +1721,7 @@ with st.sidebar:
         if st.session_state.get("_prog_sig") != _sig:
             try:
                 _nh, _nb = restore_progress(json.loads(_up.getvalue().decode("utf-8-sig")))
+                persist_user()
                 st.session_state["_prog_sig"] = _sig
                 st.session_state["_prog_msg"] = f"✅ {_nh} quiz history aur {_nb} saved sawal wapas aa gaye."
                 st.rerun()
@@ -1513,18 +1736,14 @@ with st.sidebar:
 _order = {"setup": 0, "quiz": 1, "result": 2}
 _cur = _order.get(st.session_state.stage, -1)
 _steps = ""
-for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
+for n, name in enumerate([t("step1"), t("step2"), t("step3")]):
     cls = "on" if n == _cur else ("done" if 0 <= _cur and n < _cur else "")
     _steps += f"<span class='qf-step {cls}'>{n + 1} · {name}</span>"
 
+_u = st.session_state.get("user") or {}
+_who = (_u.get("email") or "").split("@")[0] or auth_store.mask(_u.get("phone") or "") if _u else None
 st.markdown(
-    f"""
-<div class="qf-hero">
-  <div class="qf-title qf-display">{APP_NAME}</div>
-  <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
-  <div class="qf-steps">{_steps}</div>
-</div>
-""",
+    theme.hero_html(APP_NAME, t("app_tag"), _steps, who=_who or theme._x("guest"), level=level_of(st.session_state.total_xp)),
     unsafe_allow_html=True,
 )
 
@@ -1965,15 +2184,7 @@ def render_doubt_tab(cfg):
 if st.session_state.stage == "setup":
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
-    st.markdown(
-        f"""<div class="qf-tiles">
-  <div class="qf-tile"><div class="v">{lvl}</div><div class="l">Level</div></div>
-  <div class="qf-tile"><div class="v" style="color:#FFC857">{st.session_state.total_xp}</div><div class="l">Total XP</div></div>
-  <div class="qf-tile"><div class="v">{len(hist)}</div><div class="l">Quizzes khele</div></div>
-  <div class="qf-tile"><div class="v" style="color:#34D399">{best_pct}%</div><div class="l">Best score</div></div>
-</div>""",
-        unsafe_allow_html=True,
-    )
+    st.markdown(theme.tiles_html(lvl, st.session_state.total_xp, len(hist), best_pct), unsafe_allow_html=True)
 
     cfg = {
         "num_questions": num_questions, "difficulty": difficulty, "adaptive": adaptive, "type_keys": type_keys,
@@ -2407,6 +2618,7 @@ else:
 # Browser layer (sound / voice / shortcuts) — keep at the very end
 # ─────────────────────────────────────────────────────────────
 _run_lang = st.session_state.meta.get("language", language) if st.session_state.stage == "quiz" else language
+render_sidebar_toggle()
 render_browser_layer(
     sound_on=sound_on,
     tts_lang="hi-IN" if _run_lang == "Hindi" else "en-IN",
