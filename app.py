@@ -19,8 +19,10 @@ from groq import Groq
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
+APP_NAME = "AI Quiz Arena"
+
 st.set_page_config(
-    page_title="QuizForge · AI Quiz Arena",
+    page_title=APP_NAME,
     page_icon="🧠",
     layout="centered",
     initial_sidebar_state="expanded",
@@ -223,21 +225,6 @@ div[data-baseweb="select"] *{ color:var(--txt) !important; }
 st.markdown(BASE_CSS, unsafe_allow_html=True)
 if LIGHT:
     st.markdown(LIGHT_CSS, unsafe_allow_html=True)
-    st.markdown(BASE_CSS, unsafe_allow_html=True)
-if LIGHT:
-    st.markdown(LIGHT_CSS, unsafe_allow_html=True)
-
-# Top header aur Fork button hide karne ke liye ye add karein:
-st.markdown("""
-<style>
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
-    .main .block-container {
-        padding-top: 2rem !important;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
 # API KEY / CLIENT
@@ -263,7 +250,8 @@ client = get_client(api_key)
 MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 MAX_CHARS = 24000
-MAX_IMG_BYTES = 3 * 1024 * 1024
+MAX_IMG_BYTES = 3 * 1024 * 1024  # size sent to the AI (after compression)
+MAX_RAW_IMG_BYTES = 15 * 1024 * 1024  # biggest photo we accept from the user
 MAX_TOTAL_Q = 200  # cap for one quiz, including 'aur sawal' extensions
 XP_BASE = {1: 10, 2: 15, 3: 20}
 LEVEL_NAME = {1: "Easy", 2: "Medium", 3: "Hard"}
@@ -276,6 +264,7 @@ TYPE_MAP = {
     "Multi-select": "multi",
     "Fill in the blank": "blank",
     "Short answer (AI check)": "short",
+    "Numerical value": "num",
 }
 TYPE_ALIASES = {
     "mcq": "mcq", "multiple choice": "mcq", "multiple_choice": "mcq",
@@ -283,6 +272,7 @@ TYPE_ALIASES = {
     "multi": "multi", "multi-select": "multi", "multiselect": "multi", "multi_select": "multi",
     "blank": "blank", "fill": "blank", "fill in the blank": "blank", "fill_in_the_blank": "blank",
     "short": "short", "short answer": "short", "short_answer": "short",
+    "num": "num", "numerical": "num", "numeric": "num", "numerical value": "num", "integer": "num", "nvq": "num",
 }
 TYPE_SPECS = {
     "mcq": '{"type":"mcq","question":"...","options":["A","B","C","D"],"answer":"<exact text of the correct option>"}',
@@ -290,6 +280,7 @@ TYPE_SPECS = {
     "multi": '{"type":"multi","question":"... (select all that apply)","options":["..","..","..","..",".."],"answers":["<exact option>","<exact option>"]}',
     "blank": '{"type":"blank","question":"A sentence with ____ in place of the missing word","answer":"missing word or phrase","accept":["acceptable alternative"]}',
     "short": '{"type":"short","question":"open question answerable in 1-3 sentences","answer":"model answer in 1-2 sentences"}',
+    "num": '{"type":"num","question":"a problem whose final answer is a single number","answer":"<number only, no units>"}',
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -352,7 +343,7 @@ def llm(messages, model, json_mode=False, temperature=0.6):
     return r.choices[0].message.content or ""
 
 
-def llm_stream(messages, model, temperature=0.85):
+def llm_stream(messages, model, temperature=0.5):
     """Yield text chunks so answers appear word by word (used by the Doubt Solver)."""
     kwargs = dict(model=model, messages=messages, temperature=temperature, stream=True)
     if model.startswith("openai/gpt-oss"):
@@ -385,6 +376,44 @@ def clean_json(raw: str):
 # ─────────────────────────────────────────────────────────────
 # QUESTION MODEL: validation, answers, scoring
 # ─────────────────────────────────────────────────────────────
+def to_number(s):
+    """Parse '12', '-3.5', '1,200', '4.2e3', '12 m/s' -> float (or None)."""
+    if s is None:
+        return None
+    t = str(s).strip().replace(",", "").replace("−", "-")
+    pat = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+    m = re.fullmatch(pat, t) or re.search(pat, t)
+    try:
+        return float(m.group()) if m else None
+    except Exception:
+        return None
+
+
+def fmt_num(v):
+    return str(int(round(v))) if abs(v - round(v)) < 1e-9 else f"{v:.6g}"
+
+
+def prepare_image(data, mime="image/jpeg", max_side=1600):
+    """Fix phone-photo rotation, shrink big photos and re-encode as JPEG so they fit the AI size limit."""
+    try:
+        from PIL import Image, ImageOps
+
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            img = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, "white")
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return data, mime
+
+
 def norm_text(s) -> str:
     s = re.sub(r"[^\w\s]", "", str(s).casefold())
     return " ".join(s.split())
@@ -468,6 +497,16 @@ def validate_and_shuffle(items, default_level=2, adaptive=False):
                 if t != "tf":
                     random.shuffle(options)
                 item["options"] = options
+            elif t == "num":
+                val = to_number(q.get("answer"))
+                if val is None:
+                    continue
+                item["answer"] = fmt_num(val)
+                try:
+                    tol = float(q.get("tolerance", 0) or 0)
+                except Exception:
+                    tol = 0.0
+                item["tol"] = tol if tol > 0 else (0.0 if abs(val - round(val)) < 1e-9 else 0.011)
             elif t == "blank":
                 ans = str(q["answer"]).strip()
                 if not ans or "__" not in question:
@@ -502,6 +541,9 @@ def is_correct(i) -> bool:
         return a == q["answer"]
     if t == "multi":
         return set(a) == set(q["answers"])
+    if t == "num":
+        ua, ca = to_number(a), to_number(q["answer"])
+        return ua is not None and ca is not None and abs(ua - ca) <= q.get("tol", 0.0) + 1e-9
     if t == "blank":
         return blank_match(a, q)
     return ss.grades.get(i, {}).get("score", 0) >= 0.6
@@ -766,12 +808,12 @@ def question_marks(i):
     ss = st.session_state
     q = ss.quiz[i]
     m = ss.meta.get("marks", 1.0)
-    pen = m * ss.meta.get("neg", 0.0)
+    pen = 0.0 if q["type"] in ss.meta.get("no_neg_types", []) else m * ss.meta.get("neg", 0.0)
     if is_skipped(i):
         return 0.0
     if q["type"] == "short":
         return round(m * ss.grades.get(i, {}).get("score", 0.0), 2)
-    return m if is_correct(i) else -pen
+    return m if is_correct(i) else (-pen if pen else 0.0)
 
 
 def compute_badges(pct, best_streak, avg_time, hints, diff, survival_win, n_types, perfect):
@@ -858,29 +900,62 @@ def finish_quiz():
 # PYQ DATABASE, MORE-QUESTIONS, PROGRESS BACKUP
 # ─────────────────────────────────────────────────────────────
 PYQ_FILE = "pyq_data.json"
-EXAM_LIST = ["SSC CGL", "RRB NTPC", "Banking (IBPS/SBI)", "UP Police Constable", "UPSC / State PCS", "General All Exams"]
-EXAM_SUBJECTS = {
-    "SSC CGL": ["Quantitative Aptitude", "General Intelligence & Reasoning", "English Comprehension", "General Awareness"],
-    "RRB NTPC": ["Mathematics", "General Intelligence & Reasoning", "General Awareness"],
-    "Banking (IBPS/SBI)": ["Quantitative Aptitude", "Reasoning Ability", "English Language", "General/Financial Awareness", "Computer Aptitude"],
-    "UP Police Constable": ["General Knowledge", "General Hindi", "Numerical & Mental Ability", "Mental Aptitude / Reasoning"],
-    "UPSC / State PCS": ["History", "Geography", "Polity", "Economy", "Science & Technology", "Environment", "Current Affairs"],
-    "General All Exams": ["Mixed"],
+# Official-style patterns (checked against 2026 sources). neg = fraction of the marks lost per wrong answer.
+# Patterns change and some sources disagree, so the app lets the user adjust and shows a note per exam.
+EXAM_CONFIG = {
+    "SSC CGL": {
+        "marks": 2.0, "neg": 0.25, "minutes": 60,
+        "sections": [("Reasoning", {"mcq": 25}), ("General Awareness", {"mcq": 25}), ("Quantitative Aptitude", {"mcq": 25}), ("English Comprehension", {"mcq": 25})],
+        "note": "Tier-I: 100 sawal, 60 min, +2 / −0.5.",
+    },
+    "RRB NTPC": {
+        "marks": 1.0, "neg": 1 / 3, "minutes": 90,
+        "sections": [("Mathematics", {"mcq": 30}), ("Reasoning", {"mcq": 30}), ("General Awareness", {"mcq": 40})],
+        "note": "CBT-1: 100 sawal, 90 min, +1 / −⅓.",
+    },
+    "Banking (IBPS/SBI)": {
+        "marks": 1.0, "neg": 0.25, "minutes": 60,
+        "sections": [("English", {"mcq": 30}), ("Quantitative Aptitude", {"mcq": 35}), ("Reasoning", {"mcq": 35})],
+        "note": "Prelims: 100 sawal, 60 min, +1 / −¼.",
+    },
+    "UP Police Constable": {
+        "marks": 2.0, "neg": 0.25, "minutes": 120,
+        "sections": [("General Knowledge", {"mcq": 38}), ("General Hindi", {"mcq": 37}), ("Numerical Ability", {"mcq": 38}), ("Reasoning", {"mcq": 37})],
+        "note": "150 sawal, 120 min, +2 / −0.5. Sources me farak hai (kuch −0.25 ya negative nahi likhte) — apni notification dekh kar adjust karo.",
+    },
+    "UPSC / State PCS": {
+        "marks": 2.0, "neg": 1 / 3, "minutes": 120,
+        "sections": [("History", {"mcq": 17}), ("Polity", {"mcq": 16}), ("Economy", {"mcq": 16}), ("Geography", {"mcq": 15}), ("Environment", {"mcq": 14}), ("Science & Tech", {"mcq": 11}), ("Current Affairs", {"mcq": 11})],
+        "note": "GS Paper-I jaisa: 100 sawal, 120 min, +2 / −⅓. Subject-wise ginti approximate hai.",
+    },
+    "UP CNET (Nursing)": {
+        "marks": 1.0, "neg": 0.0, "minutes": 140,
+        "sections": [("Physics", {"mcq": 24}), ("Chemistry", {"mcq": 24}), ("Biology", {"mcq": 24}), ("English", {"mcq": 24}), ("Nursing Aptitude", {"mcq": 24})],
+        "note": "2026 bulletin: 120 sawal, 140 min, +1, koi negative marking nahi.",
+    },
+    "NEET UG": {
+        "marks": 4.0, "neg": 0.25, "minutes": 180,
+        "sections": [("Physics", {"mcq": 45}), ("Chemistry", {"mcq": 45}), ("Botany", {"mcq": 45}), ("Zoology", {"mcq": 45})],
+        "note": "180 sawal (sab compulsory), 180 min, +4 / −1, 720 marks.",
+    },
+    "JEE Main": {
+        "marks": 4.0, "neg": 0.25, "minutes": 180,
+        "sections": [("Physics", {"mcq": 20, "num": 5}), ("Chemistry", {"mcq": 20, "num": 5}), ("Mathematics", {"mcq": 20, "num": 5})],
+        "note": "Paper-1: 75 sawal (har subject me 20 MCQ + 5 numerical), 180 min, +4 / −1, 300 marks. Numerical par negative ko lekar sources me farak hai — neeche toggle se chuno.",
+    },
 }
-# Approximate patterns (neg = fraction of the marks per question). Patterns change — verify with the official notification.
-EXAM_PRESETS = {
-    "SSC CGL": {"n": 100, "minutes": 60, "marks": 2.0, "neg": 0.25},
-    "RRB NTPC": {"n": 100, "minutes": 90, "marks": 1.0, "neg": 1 / 3},
-    "Banking (IBPS/SBI)": {"n": 100, "minutes": 60, "marks": 1.0, "neg": 0.25},
-    "UP Police Constable": {"n": 150, "minutes": 120, "marks": 2.0, "neg": 0.25},
-    "UPSC / State PCS": {"n": 100, "minutes": 120, "marks": 2.0, "neg": 1 / 3},
-}
+EXAM_LIST = list(EXAM_CONFIG) + ["General All Exams"]
+EXAM_SUBJECTS = {k: [name for name, _ in v["sections"]] for k, v in EXAM_CONFIG.items()}
+EXAM_SUBJECTS["General All Exams"] = ["Mixed"]
+NEG_CHOICES = {"Official": None, "Koi negative nahi": 0.0, "¼": 0.25, "⅓": 1 / 3, "½": 0.5, "Full (−1x)": 1.0}
 PYQ_TEMPLATE = json.dumps(
     [
         {"exam": "SSC CGL", "subject": "General Awareness", "year": "2022", "question": "SAMPLE (replace me): Which planet is known as the Red Planet?",
          "options": ["Venus", "Mars", "Jupiter", "Saturn"], "answer": "Mars", "explanation": "Mars looks red due to iron oxide."},
         {"exam": "SSC CGL", "subject": "Quantitative Aptitude", "year": "2021", "question": "SAMPLE (replace me): 15% of 200 = ?",
          "options": ["20", "25", "30", "35"], "answer": "C", "explanation": "0.15 x 200 = 30. 'answer' can be the option text or its letter A-D."},
+        {"exam": "JEE Main", "subject": "Physics", "year": "2023", "type": "num", "question": "SAMPLE (replace me): A body of mass 2 kg moves at 3 m/s. Its kinetic energy (in J) is?",
+         "answer": "9", "explanation": "KE = 1/2 x 2 x 9 = 9 J. For numerical questions use type 'num' and a number as answer."},
     ],
     ensure_ascii=False,
     indent=2,
@@ -893,22 +968,31 @@ def normalize_pyq(items):
         return out
     for it in items:
         try:
-            opts = [str(o).strip() for o in it["options"] if str(o).strip()]
-            ans = resolve_option(it.get("answer", it.get("correct", "")), opts)
             question = str(it["question"]).strip()
-            if len(opts) < 2 or ans is None or not question:
+            if not question:
                 continue
-            out.append(
-                {
-                    "exam": str(it.get("exam", "General All Exams")).strip() or "General All Exams",
-                    "subject": str(it.get("subject", "General")).strip() or "General",
-                    "year": str(it.get("year", "")).strip(),
-                    "question": question,
-                    "options": opts,
-                    "answer": ans,
-                    "explanation": str(it.get("explanation", "")).strip(),
-                }
-            )
+            base = {
+                "exam": str(it.get("exam", "General All Exams")).strip() or "General All Exams",
+                "subject": str(it.get("subject", "General")).strip() or "General",
+                "year": str(it.get("year", "")).strip(),
+                "question": question,
+                "explanation": str(it.get("explanation", "")).strip(),
+            }
+            if str(it.get("type", "mcq")).lower().strip() in ("num", "numerical", "nvq", "integer"):
+                val = to_number(it.get("answer", it.get("correct", "")))
+                if val is None:
+                    continue
+                try:
+                    tol = float(it.get("tolerance", 0) or 0)
+                except Exception:
+                    tol = 0.0
+                out.append({**base, "type": "num", "options": [], "answer": fmt_num(val), "tol": tol if tol > 0 else (0.0 if abs(val - round(val)) < 1e-9 else 0.011)})
+            else:
+                opts = [str(o).strip() for o in it["options"] if str(o).strip()]
+                ans = resolve_option(it.get("answer", it.get("correct", "")), opts)
+                if len(opts) < 2 or ans is None:
+                    continue
+                out.append({**base, "type": "mcq", "options": opts, "answer": ans})
         except Exception:
             continue
     return out
@@ -950,20 +1034,24 @@ def parse_pyq_upload(f):
         items.append(
             {
                 "exam": cell(r, "exam", "General All Exams"), "subject": cell(r, "subject", "General"), "year": cell(r, "year"),
-                "question": cell(r, "question"), "options": opts, "answer": cell(r, "answer"), "explanation": cell(r, "explanation"),
+                "type": cell(r, "type", "mcq"), "question": cell(r, "question"), "options": opts, "answer": cell(r, "answer"),
+                "tolerance": cell(r, "tolerance", "0"), "explanation": cell(r, "explanation"),
             }
         )
     return normalize_pyq(items)
 
 
 def pyq_to_item(x):
+    kind = x.get("type", "mcq")
     opts = list(x["options"])
-    random.shuffle(opts)
+    if kind == "mcq":
+        random.shuffle(opts)
     return {
-        "type": "mcq", "question": x["question"], "options": opts, "answer": x["answer"], "answers": [], "accept": [],
+        "type": kind, "question": x["question"], "options": opts, "answer": x["answer"], "answers": [], "accept": [],
+        "tol": x.get("tol", 0.0),
         "explanation": x.get("explanation") or "Is sawal ka explanation dataset me nahi hai.",
-        "hint": "", "topic": (x.get("subject") or "General")[:30], "level": 2,
-        "src": f"{x['exam']} {x['year']}".strip(),
+        "hint": "", "topic": (x.get("subject") or "General")[:30],
+        "level": 2, "src": f"{x['exam']} {x['year']}".strip(),
     }
 
 
@@ -1079,7 +1167,7 @@ def current_choice(q, qid, i):
         return s.get(f"radio_{qid}_{i}")
     if t == "multi":
         return [o for n, o in enumerate(q["options"]) if s.get(f"cb_{qid}_{i}_{n}")]
-    if t == "blank":
+    if t in ("blank", "num"):
         return s.get(f"txt_{qid}_{i}")
     return s.get(f"ta_{qid}_{i}")
 
@@ -1097,6 +1185,8 @@ def answer_widget(q, qid, i, locked, prev):
             if st.checkbox(o, value=(o in chosen), key=f"cb_{qid}_{i}_{n}", disabled=locked):
                 sel.append(o)
         return sel
+    if t == "num":
+        return st.text_input("Numerical answer", value=prev or "", key=f"txt_{qid}_{i}", disabled=locked, placeholder="Sirf number likho, jaise 12.5")
     if t == "blank":
         return st.text_input("Khali jagah bharo", value=prev or "", key=f"txt_{qid}_{i}", disabled=locked, placeholder="Apna answer type karo…")
     return st.text_area("Apna answer likho (1-3 line)", value=prev or "", key=f"ta_{qid}_{i}", height=120, disabled=locked)
@@ -1131,11 +1221,11 @@ def build_report_html():
             f"<td>{esc(correct_text(q))}</td><td style='color:{'#1FA67A' if ok else '#E5484D'}'>{'✔' if ok else '✘'}</td>"
             f"<td>{esc(q['explanation'])}</td></tr>"
         )
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>QuizForge Report</title>
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>{APP_NAME} Report</title>
 <style>body{{font-family:Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}}
 h1{{color:#4B3FD1}} table{{border-collapse:collapse;width:100%}} td,th{{border:1px solid #ddd;padding:8px;font-size:14px;vertical-align:top}}
 th{{background:#4B3FD1;color:#fff}} .s{{font-size:20px;margin:10px 0}}</style></head><body>
-<h1>QuizForge · Result Report</h1>
+<h1>{APP_NAME} · Result Report</h1>
 <p>{esc(ss.meta.get('label', 'Quiz'))} · {esc(ss.meta.get('difficulty', ''))} · {datetime.now().strftime('%d %b %Y, %H:%M')}</p>
 <p class="s"><b>Marks:</b> {fmt_marks(r['marks'])}/{fmt_marks(r['max_marks'])} &nbsp; <b>Accuracy:</b> {r['accuracy']}% &nbsp; <b>Correct:</b> {r['score']}/{r['total']} &nbsp; <b>XP:</b> {r['xp']} &nbsp; <b>Best streak:</b> {r['best_streak']}</p>
 <table><tr><th>#</th><th>Question</th><th>Your answer</th><th>Correct</th><th></th><th>Explanation</th></tr>{rows}</table>
@@ -1402,7 +1492,7 @@ with st.sidebar:
         {"v": 1, "xp": st.session_state.total_xp, "history": st.session_state.history, "bookmarks": list(st.session_state.bookmarks.values())},
         ensure_ascii=False,
     )
-    st.download_button("⬇️ Progress save karo", _backup.encode("utf-8"), file_name="quizforge_progress.json", mime="application/json", use_container_width=True)
+    st.download_button("⬇️ Progress save karo", _backup.encode("utf-8"), file_name="quiz_progress.json", mime="application/json", use_container_width=True)
     _up = st.file_uploader("Progress load karo", type=["json"], key="prog_up")
     if _up is not None:
         _sig = (_up.name, _up.size)
@@ -1430,7 +1520,7 @@ for n, name in enumerate(["Content chuno", "Quiz khelo", "Result dekho"]):
 st.markdown(
     f"""
 <div class="qf-hero">
-  <div class="qf-title qf-display">QuizForge</div>
+  <div class="qf-title qf-display">{APP_NAME}</div>
   <div class="qf-sub">Topic, PDF ya notes ki photo do — AI turant quiz banata hai. Awaaz, timer, lives, XP aur badges ke saath seekho.</div>
   <div class="qf-steps">{_steps}</div>
 </div>
@@ -1520,13 +1610,17 @@ def render_quiz_tab(cfg):
                 else st.camera_input("Live photo click karo", key="quiz_cam")
             )
             if mf is not None:
-                data = mf.getvalue()
-                if len(data) > MAX_IMG_BYTES:
-                    st.error("Photo 3 MB se badi hai. Chhoti ya compress ki hui photo use karo.")
+                raw = mf.getvalue()
+                if len(raw) > MAX_RAW_IMG_BYTES:
+                    st.error("Photo 15 MB se badi hai. Chhoti photo use karo.")
                 else:
-                    st.image(data, caption="Selected photo", use_container_width=True)
-                    media = {"bytes": data, "mime": getattr(mf, "type", None) or "image/jpeg"}
-                    input_text, label = "(attached image)", f"Photo: {getattr(mf, 'name', 'Camera picture')}"
+                    data, mime = prepare_image(raw, getattr(mf, "type", None) or "image/jpeg")
+                    if len(data) > MAX_IMG_BYTES:
+                        st.error("Photo compress hone ke baad bhi bahut badi hai. Kam resolution ki photo lo.")
+                    else:
+                        st.image(data, caption="Selected photo", use_container_width=True)
+                        media = {"bytes": data, "mime": mime}
+                        input_text, label = "(attached image)", f"Photo: {getattr(mf, 'name', 'Camera picture')}"
 
         else:
             pasted = st.text_area("Apne notes / article yahan paste karo", height=200, placeholder="Chapter ka text, notes, ya koi bhi article…")
@@ -1542,22 +1636,69 @@ def render_quiz_tab(cfg):
             launch_quiz(input_text, label, cfg, media)
 
 
-# ── TAB 2 · GOVT EXAM PYQ ────────────────────────────────────
+# ── TAB 2 · GOVT & ENTRANCE EXAMS ───────────────────────────
+def plan_sections(conf, n_total, subject, mock, factor):
+    """Return [(subject, qtype, count)] following the exam's section pattern."""
+    secs = conf["sections"] if conf else [("Mixed", {"mcq": 1})]
+    if subject != "All subjects":
+        secs = [x for x in secs if x[0] == subject] or [(subject, {"mcq": 1})]
+    entries = [(subj, t, cnt) for subj, mix in secs for t, cnt in mix.items()]
+    if mock:
+        return [(subj, t, max(1, round(cnt * factor))) for subj, t, cnt in entries]
+    total_w = sum(c for _, _, c in entries) or 1
+    raw = [n_total * c / total_w for _, _, c in entries]
+    alloc = [int(x) for x in raw]
+    for k in sorted(range(len(raw)), key=lambda k: raw[k] - alloc[k], reverse=True)[: n_total - sum(alloc)]:
+        alloc[k] += 1
+    return [(subj, t, a) for (subj, t, _), a in zip(entries, alloc) if a > 0]
+
+
+def build_pyq_quiz(exam, cfg, pool, fill_ai, plan):
+    quiz, notes = [], []
+    for subj, t, n in plan:
+        sec_pool = [x for x in pool if x.get("type", "mcq") == t and (subj == "Mixed" or x["subject"].strip().lower() == subj.lower())]
+        taken = {q["question"].strip().lower() for q in quiz}
+        got = pick_from_pool(sec_pool, n, taken)
+        need = n - len(got)
+        if need > 0 and (fill_ai or not pool):
+            subj_txt = "mixed subjects of the syllabus" if subj == "Mixed" else subj
+            src = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
+            if t == "num":
+                src += " The answer of every question must be a single number."
+            try:
+                got += generate_with_progress(
+                    src, need, cfg["difficulty"], [t], cfg["language"], cfg["model"],
+                    avoid=[q["question"] for q in quiz] + [g["question"] for g in got], adaptive=False, exam=f"{exam} · {subj}",
+                )
+            except Exception as e:
+                notes.append(f"{subj}: AI se baaki sawal nahi ban paye ({friendly_error(e)})")
+                for g in got:
+                    g["topic"] = subj[:30]
+                quiz += got
+                break
+        for g in got:
+            g["topic"] = subj[:30]  # subject-wise analytics
+        quiz += got
+    return quiz, notes
+
+
 def render_pyq_tab(cfg):
     ss = st.session_state
-    st.markdown("### 🏛️ Govt Exam PYQ Practice")
+    st.markdown("### 🏛️ Govt & Entrance Exam Practice")
     st.caption(
-        "Apne dataset ke **asli purane sawal** (📜 tag ke saath) ya AI ke **exam-pattern practice sawal**. "
-        "AI ke sawal asli paper ke nahi hote — dono ko alag dikhaya jata hai."
+        "SSC, RRB, Banking, UP Police, UPSC, UP CNET, NEET aur JEE. Marking har exam ke hisaab se lagti hai (galat par negative bhi). "
+        "Apne dataset ke **asli purane sawal** par 📜 tag aata hai; AI ke sawal exam-pattern practice hote hain, asli paper ke nahi."
     )
     dataset = load_pyq_dataset()
 
     with st.container(key="panel_pyq"):
         exam = st.selectbox("Target exam", EXAM_LIST, key="pyq_exam")
+        conf = EXAM_CONFIG.get(exam)
         known = sorted({q["subject"] for q in dataset if q["exam"] == exam})
-        subjects = ["All subjects"] + sorted(set(EXAM_SUBJECTS.get(exam, [])) | set(known))
+        base_subjects = EXAM_SUBJECTS.get(exam, [])
+        subjects = ["All subjects"] + base_subjects + [k for k in known if k not in base_subjects]
         subject = st.selectbox("Subject", subjects, key=f"pyq_subject_{exam}")
-        pool_all = [q for q in dataset if q["exam"] == exam and (subject == "All subjects" or q["subject"] == subject)]
+        pool_all = [q for q in dataset if q["exam"] == exam and (subject == "All subjects" or q["subject"].strip().lower() == subject.lower())]
         years = sorted({q["year"] for q in pool_all if q["year"]}, reverse=True)
         sel_years = st.multiselect("Year (optional)", years, key=f"pyq_years_{exam}_{subject}") if years else []
         pool = [q for q in pool_all if not sel_years or q["year"] in sel_years]
@@ -1568,21 +1709,52 @@ def render_pyq_tab(cfg):
             st.info("Is filter ke liye dataset me PYQ nahi hain — AI exam-pattern wale practice sawal banayega (asli paper ke nahi).")
         fill_ai = st.toggle("Dataset me kam pade to AI se bharo", value=True, key="pyq_fill") if pool else True
 
-        preset = EXAM_PRESETS.get(exam)
-        use_pattern = False
-        if preset:
-            use_pattern = st.toggle("📝 Full mock test pattern", key="pyq_pattern", help="Exam jaisa timer, sawal ginti aur marking.")
+        # ── marking scheme ──
+        official, neg_override, num_neg = False, None, True
+        if conf:
+            official = st.radio("Marking scheme", ["📋 Official (exam jaisi)", "⚙️ Sidebar wali"], horizontal=True, key=f"pyq_mark_{exam}").startswith("📋")
+            if official:
+                st.caption(f"+{fmt_marks(conf['marks'])} sahi · −{fmt_marks(conf['marks'] * conf['neg'])} galat · 0 unattempted. {conf['note']}")
+                with st.expander("Notification me alag ho to marking adjust karo"):
+                    neg_override = NEG_CHOICES[st.selectbox("Negative marking", list(NEG_CHOICES), key=f"pyq_neg_{exam}")]
+                    if any("num" in mix for _, mix in conf["sections"]):
+                        num_neg = st.toggle("Numerical questions par bhi negative lagao", value=True, key=f"pyq_numneg_{exam}")
+        else:
+            st.caption("Is option me sidebar wali marking lagegi.")
+
+        # ── mock pattern ──
+        use_pattern, factor = False, 1.0
+        if conf:
+            use_pattern = st.toggle("📝 Full mock test (exam jaisa pattern + timer)", key=f"pyq_pattern_{exam}")
             if use_pattern:
-                st.caption(
-                    f"{preset['n']} sawal · {preset['minutes']} min · +{fmt_marks(preset['marks'])} sahi · "
-                    f"−{fmt_marks(preset['marks'] * preset['neg'])} galat. ⚠️ Pattern approximate hai — official notification se confirm karo. "
-                    "100+ sawal me AI ko kuch minute lag sakte hain."
-                )
+                size = st.radio("Mock size", ["Full", "Half (50%)", "Quarter (25%)"], horizontal=True, key=f"pyq_size_{exam}")
+                factor = 1.0 if size == "Full" else (0.5 if size.startswith("Half") else 0.25)
+
+    # resolved marking + plan
+    if conf and official:
+        marks_used = conf["marks"]
+        neg_used = conf["neg"] if neg_override is None else neg_override
+        no_neg = ["num"] if (any("num" in mix for _, mix in conf["sections"]) and not num_neg) else []
+    else:
+        marks_used, neg_used, no_neg = cfg["marks"], cfg["neg"], []
+    plan = plan_sections(conf, cfg["num_questions"], subject, use_pattern, factor)
+    plan_n = sum(n for _, _, n in plan)
+    full_total = sum(sum(m.values()) for _, m in conf["sections"]) if conf else 0
+    minutes = max(5, round(conf["minutes"] * plan_n / full_total)) if (conf and use_pattern and full_total) else 0
+
+    if use_pattern:
+        st.info(f"🧾 {plan_n} sawal · {minutes} min · max {fmt_marks(plan_n * marks_used)} marks · +{fmt_marks(marks_used)} / −{fmt_marks(marks_used * neg_used)}")
+        if plan_n > 60 and not pool:
+            st.caption("⏳ Itne sawal AI se banane me kuch minute lag sakte hain (rate limit lag jaye to Half/Quarter size try karo).")
+    else:
+        st.caption(f"Practice me {plan_n} sawal bante hain (sidebar ka 'Questions' slider se badlo).")
 
     with st.expander("➕ Apna PYQ dataset jodo (JSON / CSV)"):
         st.caption(
             "Asli PYQ ke liye apna dataset do. Har sawal me: exam, subject, year, question, options, answer (text ya A-D), explanation. "
-            "`exam` ka naam upar ki list jaisa hi likho (jaise `SSC CGL`). Hamesha ke liye rakhna ho to file ko repo me `pyq_data.json` naam se daalo."
+            "Numerical sawal ke liye `type: num` aur answer me number. "
+            f"`exam` ka naam in me se ek ho: {', '.join(EXAM_LIST)}. "
+            "Hamesha ke liye rakhna ho to file ko repo me `pyq_data.json` naam se daalo."
         )
         st.download_button("📄 Template (JSON)", PYQ_TEMPLATE.encode("utf-8"), file_name="pyq_template.json", mime="application/json")
         up = st.file_uploader("PYQ file", type=["json", "csv"], key="pyq_up")
@@ -1610,37 +1782,27 @@ def render_pyq_tab(cfg):
                 st.rerun()
 
     st.write("")
-    if st.button(f"🚀 {exam} practice shuru karo", type="primary", use_container_width=True, key="btn_start_pyq"):
-        n = preset["n"] if (preset and use_pattern) else cfg["num_questions"]
+    if st.button(f"🚀 {exam} {'mock test' if use_pattern else 'practice'} shuru karo", type="primary", use_container_width=True, key="btn_start_pyq"):
         label_exam = exam if subject == "All subjects" else f"{exam} · {subject}"
         subj_txt = "mixed subjects of the syllabus" if subject == "All subjects" else subject
-        src = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
-        quiz = [pyq_to_item(x) for x in random.sample(pool, min(n, len(pool)))] if pool else []
-        need = n - len(quiz)
-        if need > 0 and (not pool or fill_ai):
-            with st.spinner("AI exam-pattern sawal bana raha hai…"):
-                try:
-                    quiz += generate_with_progress(
-                        src, need, cfg["difficulty"], ["mcq"], cfg["language"], cfg["model"],
-                        avoid=[q["question"] for q in quiz], adaptive=False, exam=label_exam,
-                    )
-                except Exception as e:
-                    if quiz:
-                        st.warning(f"AI se baaki sawal nahi ban paye ({friendly_error(e)}). Dataset ke {len(quiz)} sawal se shuru kar rahe hain.")
-                    else:
-                        st.error(friendly_error(e))
-                        return
+        src_main = f"Exam: {exam}\nSubject: {subj_txt}\nCreate practice questions matching the real exam pattern."
+        with st.spinner("Sawal taiyaar ho rahe hain…"):
+            try:
+                quiz, notes = build_pyq_quiz(exam, cfg, pool, fill_ai, plan)
+            except Exception as e:
+                st.error(friendly_error(e))
+                return
         if not quiz:
-            st.error("Is filter par koi sawal nahi bana. Filter badlo ya dobara try karo.")
+            st.error("Is filter par koi sawal nahi bana. " + " ".join(notes))
             return
-        random.shuffle(quiz)
-        mock = bool(preset and use_pattern)
+        if not use_pattern:
+            random.shuffle(quiz)
         meta = base_meta(
-            cfg, f"{label_exam} · {'Mock' if mock else 'PYQ'}", src, None,
-            types=["mcq"], adaptive=False, exam=label_exam, pyq_pool=pool, pyq_fill_ai=fill_ai,
-            mode="Exam" if mock else cfg["mode"],
-            marks=preset["marks"] if mock else cfg["marks"], neg=preset["neg"] if mock else cfg["neg"],
-            time_limit=0 if mock else cfg["time_limit"], quiz_limit=preset["minutes"] * 60 if mock else cfg["quiz_limit"],
+            cfg, f"{label_exam} · {'Mock' if use_pattern else 'Practice'}", src_main, None,
+            types=sorted({t for _, t, _ in plan}), adaptive=False, exam=label_exam, pyq_pool=pool, pyq_fill_ai=fill_ai,
+            mode="Exam" if use_pattern else cfg["mode"], marks=marks_used, neg=neg_used, no_neg_types=no_neg,
+            time_limit=0 if use_pattern else cfg["time_limit"], quiz_limit=minutes * 60 if use_pattern else cfg["quiz_limit"],
+            gen_note=" ".join(notes),
         )
         start_quiz(quiz, meta)
         st.rerun()
@@ -1702,25 +1864,28 @@ def render_doubt_tab(cfg):
             lang_opts = list(LANG_RULES.keys())
             d_lang = c1.selectbox("Jawab ki bhasha", lang_opts, index={"English": 0, "Hinglish": 1, "Hindi": 2}.get(cfg["language"], 0), key="d_lang")
             d_depth = c2.selectbox("Style", list(DEPTH_RULES.keys()), key="d_depth")
-            src = st.radio("Query type", ["📝 Text", "🖼️ Photo / Camera", "📄 PDF"], horizontal=True, key="d_src")
+            src = st.radio("Doubt kaise poochna hai?", ["📝 Text", "📸 Live Camera", "🖼️ Photo Upload", "📄 PDF"], horizontal=True, key="d_src")
             q_text, d_media = "", None
 
             if src.startswith("📝"):
                 q_text = st.text_area("Apna doubt yahan likho", height=140, placeholder="e.g. Binary Search Tree me insertion kaise hota hai? Example ke saath samjhao.", key="d_txt")
-            elif src.startswith("🖼️"):
-                mode_p = st.radio("Photo source", ["📁 Upload File", "📸 Live Camera Click"], horizontal=True, key="doubt_photo_mode")
-                d_file = (
-                    st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="d_img")
-                    if mode_p == "📁 Upload File"
-                    else st.camera_input("Question ki photo click karo", key="d_cam")
-                )
+            elif src.startswith("📸") or src.startswith("🖼️"):
+                if src.startswith("📸"):
+                    st.caption("📸 Browser me camera allow karo, question ki saaf photo lo (seedhi, achhi roshni me). Phone me back camera chahiye to browser ka camera-switch use karo.")
+                    d_file = st.camera_input("Question ki live photo click karo", key="d_cam")
+                else:
+                    d_file = st.file_uploader("Photo upload karo", type=["png", "jpg", "jpeg", "webp"], key="d_img")
                 if d_file is not None:
-                    data = d_file.getvalue()
-                    if len(data) > MAX_IMG_BYTES:
-                        st.error("Photo 3 MB se badi hai. Chhoti photo use karo.")
+                    raw = d_file.getvalue()
+                    if len(raw) > MAX_RAW_IMG_BYTES:
+                        st.error("Photo 15 MB se badi hai. Chhoti photo use karo.")
                     else:
-                        st.image(data, caption="Question photo", use_container_width=True)
-                        d_media = {"bytes": data, "mime": getattr(d_file, "type", None) or "image/jpeg"}
+                        data, mime = prepare_image(raw, getattr(d_file, "type", None) or "image/jpeg")
+                        if len(data) > MAX_IMG_BYTES:
+                            st.error("Photo compress hone ke baad bhi bahut badi hai. Kam resolution ki photo lo.")
+                        else:
+                            st.image(data, caption="Question photo", use_container_width=True)
+                            d_media = {"bytes": data, "mime": mime}
                 q_text = st.text_input("Koi extra instruction? (optional)", placeholder="e.g. Sirf Q3 solve karo", key="d_img_txt")
             else:
                 d_pdf = st.file_uploader("PDF upload karo", type=["pdf"], key="d_pdf")
@@ -1857,17 +2022,19 @@ elif st.session_state.stage == "quiz":
         running = f"🎯 {fmt_marks(sum(question_marks(j) for j in ss.locked))} · " if instant else ""
         top_r.markdown(f"<div style='text-align:right;font-weight:700'>{running}✅ {answered}/{total}</div>", unsafe_allow_html=True)
 
+    if ss.meta.get("gen_note") and i == 0:
+        st.warning(ss.meta["gen_note"])
     locked = ss.locked.get(i, False)
     if limit and countdown is not None and not locked:
         countdown(limit, qid, i, total, instant)
     if quiz_limit and quiz_countdown is not None:
         quiz_countdown(quiz_limit, qid, i)
 
-    type_label = {"mcq": "MCQ", "tf": "True/False", "multi": "Multi-select", "blank": "Fill in the blank", "short": "Short answer"}[qtype_now]
+    type_label = {"mcq": "MCQ", "tf": "True/False", "multi": "Multi-select", "blank": "Fill in the blank", "short": "Short answer", "num": "Numerical"}[qtype_now]
     lv_tag = f"<span class='qf-tag lv'>🎚️ {LEVEL_NAME[q['level']]}</span>" if is_adaptive else ""
     src_tag = f"<span class='qf-tag lv'>📜 {esc(q['src'])}</span>" if q.get("src") else ""
     _m, _pen = ss.meta.get("marks", 1.0), ss.meta.get("marks", 1.0) * ss.meta.get("neg", 0.0)
-    mk_tag = f"<span class='qf-tag'>+{fmt_marks(_m)}" + (f" / −{fmt_marks(_pen)}" if _pen and qtype_now != "short" else "") + "</span>"
+    mk_tag = f"<span class='qf-tag'>+{fmt_marks(_m)}" + (f" / −{fmt_marks(_pen)}" if _pen and qtype_now != "short" and qtype_now not in ss.meta.get("no_neg_types", []) else "") + "</span>"
     st.markdown(
         f"""<div class="qf-qcard"><div class="qf-tags">{src_tag}{lv_tag}{mk_tag}<span class='qf-tag'>{type_label}</span><span class='qf-tag'>{esc(q['topic'])}</span></div>
         <div class="qf-qnum">Question {i + 1}</div>
@@ -2046,7 +2213,7 @@ else:
     st.markdown(f"## {title}")
     st.caption(msg)
     _m = ss.meta.get("marks", 1.0)
-    st.caption(f"Marking: +{fmt_marks(_m)} sahi · −{fmt_marks(_m * ss.meta.get('neg', 0.0))} galat · 0 skip  |  Accuracy = sahi ÷ attempted")
+    st.caption(f"Marking: +{fmt_marks(_m)} sahi · −{fmt_marks(_m * ss.meta.get('neg', 0.0))} galat · 0 skip{' · numerical par negative nahi' if ss.meta.get('no_neg_types') else ''}  |  Accuracy = sahi ÷ attempted")
     if res.get("time_up"):
         st.warning("⏰ Quiz ka total time khatam ho gaya — bache hue sawal skip maane gaye.")
     st.markdown(
