@@ -307,61 +307,6 @@ TYPE_SPECS = {
 }
 
 # ─────────────────────────────────────────────────────────────
-# UI LANGUAGE (separate from the language used to generate quiz content)
-# ─────────────────────────────────────────────────────────────
-UI_TEXT = {
-    "English": {
-        "app_language": "App language", "quiz_language": "Quiz content language",
-        "login_sub": "Sign in to keep your history, XP, and saved questions synced.",
-        "login_method": "Choose a sign-in method", "email_login": "📧 Email",
-        "phone_login": "📱 Mobile number", "email_address": "Email address",
-        "mobile_number": "Mobile number", "phone_hint": "For India, enter 10 digits. For other countries, include the +country code.",
-        "send_otp": "📨 Send OTP", "wrong_email": "Enter a valid email address.",
-        "wrong_phone": "Enter a valid mobile number.", "sending_otp": "Sending OTP…",
-        "otp_sent": "OTP sent to", "enter_otp": "Enter OTP", "verify": "✅ Verify",
-        "enter_first": "Enter the OTP first.", "verifying": "Verifying…", "resend": "🔁 Resend OTP",
-        "change_contact": "← Change email / number", "level": "Level", "quiz_settings": "⚙️ Quiz settings",
-        "questions": "Questions", "difficulty": "Difficulty", "adaptive": "🎚️ Adaptive difficulty",
-        "question_types": "Question types", "mode": "Mode", "timer": "⏱️ Timer", "marking": "🎯 Marking",
-    },
-    "Hinglish": {},
-    "Hindi": {
-        "app_language": "ऐप की भाषा", "quiz_language": "क्विज़ की भाषा",
-        "login_sub": "अपनी हिस्ट्री, XP और सेव किए सवाल सुरक्षित रखने के लिए लॉग इन करें।",
-        "login_method": "लॉग इन का तरीका चुनें", "email_login": "📧 ईमेल",
-        "phone_login": "📱 मोबाइल नंबर", "email_address": "ईमेल पता",
-        "mobile_number": "मोबाइल नंबर", "phone_hint": "भारत के लिए 10 अंक लिखें। दूसरे देश के लिए +country code जोड़ें।",
-        "send_otp": "📨 OTP भेजें", "wrong_email": "सही ईमेल पता लिखें।",
-        "wrong_phone": "सही मोबाइल नंबर लिखें।", "sending_otp": "OTP भेजा जा रहा है…",
-        "otp_sent": "OTP भेजा गया:", "enter_otp": "OTP डालें", "verify": "✅ सत्यापित करें",
-        "enter_first": "पहले OTP डालें।", "verifying": "सत्यापित हो रहा है…", "resend": "🔁 OTP दोबारा भेजें",
-        "change_contact": "← ईमेल / नंबर बदलें", "level": "लेवल", "quiz_settings": "⚙️ क्विज़ सेटिंग्स",
-        "questions": "सवाल", "difficulty": "कठिनाई", "adaptive": "🎚️ बदलती कठिनाई",
-        "question_types": "सवाल के प्रकार", "mode": "मोड", "timer": "⏱️ टाइमर", "marking": "🎯 अंक",
-    },
-}
-UI_TEXT["Hinglish"] = {
-    "app_language": "App ki language", "quiz_language": "Quiz content ki language",
-    "login_sub": "Login karo, tumhari history, XP aur saved questions sync rahenge.",
-    "login_method": "Login kaise karna hai?", "email_login": "📧 Email se",
-    "phone_login": "📱 Mobile number se", "email_address": "Email address",
-    "mobile_number": "Mobile number", "phone_hint": "India ke liye 10 digits. Dusre country ke liye +country code.",
-    "send_otp": "📨 OTP bhejo", "wrong_email": "Sahi email address likho.",
-    "wrong_phone": "Sahi mobile number likho.", "sending_otp": "OTP bheja ja raha hai…",
-    "otp_sent": "OTP bheja gaya:", "enter_otp": "OTP daalo", "verify": "✅ Verify karo",
-    "enter_first": "Pehle OTP daalo.", "verifying": "Verify ho raha hai…", "resend": "🔁 OTP dobara bhejo",
-    "change_contact": "← Email / number badlo", "level": "Level", "quiz_settings": "⚙️ Quiz settings",
-    "questions": "Questions", "difficulty": "Difficulty", "adaptive": "🎚️ Adaptive difficulty",
-    "question_types": "Question types", "mode": "Mode", "timer": "⏱️ Timer", "marking": "🎯 Marking",
-}
-
-
-def ui(key):
-    lang = st.session_state.get("app_language", "Hinglish")
-    return UI_TEXT.get(lang, UI_TEXT["Hinglish"]).get(key, UI_TEXT["Hinglish"].get(key, key))
-
-
-# ─────────────────────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────────────────────
 def fresh_run_state():
@@ -373,7 +318,6 @@ def fresh_run_state():
 
 
 GLOBAL_DEFAULTS = {
-    "app_language": "Hinglish",
     "stage": "setup", "quiz_id": 0, "history": [], "meta": {}, "total_xp": 0, "bookmarks": {}, "deep": {},
     "flash_cards": [], "flash_i": 0, "flash_show": False, "flash_return": "setup",
     "q_key": None, "q_start": time.time(), "_picked": "",
@@ -1085,17 +1029,8 @@ def mask_ident(ident):
 def auth_friendly(e, channel, verifying=False):
     msg = str(e)
     low = msg.lower()
-    provider_missing = any(k in low for k in (
-        "provider", "not configured", "isn't set up", "not set up", "smtp", "email_not_configured",
-        "sms_not_configured", "unsupported phone", "twilio", "email provider", "sms provider",
-    ))
-    if not verifying and provider_missing:
-        if channel == "phone":
-            return ("Phone OTP service isn't configured. In Supabase, open Authentication → Sign In / Providers "
-                    "and configure an SMS provider (for example Twilio). Until then, use email login.")
-        return ("Email OTP service isn't configured. In Supabase, open Authentication → SMTP Settings and "
-                "configure SMTP (or enable the email provider). These settings belong in Supabase Auth, not app Secrets. "
-                "Keep only GROQ_API_KEY, SUPABASE_URL, and SUPABASE_ANON_KEY in app Secrets.")
+    if channel == "phone" and any(k in low for k in ("provider", "sms", "twilio", "unsupported phone")):
+        return "Phone OTP ke liye Supabase me SMS provider (Twilio jaisa) setup hona chahiye. Abhi email se login karo."
     if any(k in low for k in ("rate limit", "too many", "after", "seconds")) and not verifying:
         return "Bahut jaldi-jaldi OTP maanga. Thodi der (kuch minute) baad dobara try karo."
     if verifying and any(k in low for k in ("expired", "invalid", "token", "otp")):
@@ -1211,30 +1146,29 @@ def try_cookie_login(cm):
 def render_login(cm):
     """Draws the login screen. Returns True the moment the user is logged in."""
     ss = st.session_state
-    st.selectbox(ui("app_language"), ["Hinglish", "English", "Hindi"], key="app_language")
     st.markdown(
         f"""<div class="qf-hero"><div class="qf-title qf-display">{APP_NAME}</div>
-<div class="qf-sub">{ui("login_sub")}</div></div>""",
+<div class="qf-sub">Login karo — tumhari history, XP aur saved sawal hamesha safe rahenge, aur har baar naye sawal milenge.</div></div>""",
         unsafe_allow_html=True,
     )
     otp = ss.get("otp") or {}
     with st.container(key="panel_login"):
         if not otp:
-            ch = st.radio(ui("login_method"), [ui("email_login"), ui("phone_login")], horizontal=True, key="login_ch")
+            ch = st.radio("Login kaise karna hai?", ["📧 Email se", "📱 Mobile number se"], horizontal=True, key="login_ch")
             is_email = ch.startswith("📧")
             raw = st.text_input(
-                ui("email_address") if is_email else ui("mobile_number"), key="login_id_email" if is_email else "login_id_phone",
-                placeholder="you@example.com" if is_email else "98765 43210  (+91…)",
+                "Email address" if is_email else "Mobile number", key="login_id_email" if is_email else "login_id_phone",
+                placeholder="you@example.com" if is_email else "98765 43210  (ya +91…)",
             )
             if not is_email:
-                st.caption(ui("phone_hint"))
-            if st.button(ui("send_otp"), type="primary", use_container_width=True, key="otp_send_btn"):
+                st.caption("India ka number ho to sirf 10 digit likho. Dusre desh ke liye +country code.")
+            if st.button("📨 OTP bhejo", type="primary", use_container_width=True, key="otp_send_btn"):
                 ident = (raw or "").strip().lower() if is_email else normalize_phone(raw)
                 if (is_email and not EMAIL_RE.match(ident or "")) or (not is_email and not ident):
-                    st.error(ui("wrong_email") if is_email else ui("wrong_phone"))
+                    st.error("Sahi email likho." if is_email else "Sahi mobile number likho.")
                 else:
                     channel = "email" if is_email else "phone"
-                    with st.spinner(ui("sending_otp")):
+                    with st.spinner("OTP bheja ja raha hai…"):
                         try:
                             otp_send(channel, ident)
                             ss["otp"] = {"channel": channel, "ident": ident, "sent": time.time()}
@@ -1243,15 +1177,15 @@ def render_login(cm):
                             st.error(auth_friendly(e, channel))
             return False
 
-        st.success(f"{ui('otp_sent')} **{mask_ident(otp['ident'])}**")
-        code = st.text_input(ui("enter_otp"), max_chars=10, key="otp_code", placeholder="123456")
+        st.success(f"OTP bheja gaya: **{mask_ident(otp['ident'])}**")
+        code = st.text_input("OTP daalo", max_chars=10, key="otp_code", placeholder="123456")
         c1, c2 = st.columns(2)
-        if c1.button(ui("verify"), type="primary", use_container_width=True, key="otp_verify_btn"):
+        if c1.button("✅ Verify karo", type="primary", use_container_width=True, key="otp_verify_btn"):
             token = re.sub(r"\s", "", code or "")
             if not token:
-                st.warning(ui("enter_first"))
+                st.warning("Pehle OTP daalo.")
             else:
-                with st.spinner(ui("verifying")):
+                with st.spinner("Verify ho raha hai…"):
                     try:
                         res = otp_verify(otp["channel"], otp["ident"], token)
                         complete_login(res.session, res.user, cm)
@@ -1259,7 +1193,7 @@ def render_login(cm):
                         return True
                     except Exception as e:
                         st.error(auth_friendly(e, otp["channel"], verifying=True))
-        if c2.button(ui("resend"), use_container_width=True, key="otp_resend_btn"):
+        if c2.button("🔁 OTP dobara bhejo", use_container_width=True, key="otp_resend_btn"):
             wait = 60 - (time.time() - otp.get("sent", 0))
             if wait > 0:
                 st.warning(f"{int(wait) + 1} second baad dobara try karo.")
@@ -1270,7 +1204,7 @@ def render_login(cm):
                     st.success("Naya OTP bhej diya.")
                 except Exception as e:
                     st.error(auth_friendly(e, otp["channel"]))
-        if st.button(ui("change_contact"), key="otp_back"):
+        if st.button("← Email / number badlo", key="otp_back"):
             ss["otp"] = {}
             st.rerun()
     return False
@@ -1981,14 +1915,13 @@ with st.sidebar:
     st.markdown(f"### 🎖️ Level {lvl}")
     st.progress((st.session_state.total_xp % 100) / 100, text=f"{st.session_state.total_xp} XP · agle level tak {100 - st.session_state.total_xp % 100}")
 
-    app_language = st.selectbox(ui("app_language"), ["Hinglish", "English", "Hindi"], key="app_language")
-    st.markdown(f"### {ui('quiz_settings')}")
-    num_questions = st.slider(ui("questions"), 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
-    difficulty = st.select_slider(ui("difficulty"), ["Easy", "Medium", "Hard"], value="Medium")
-    adaptive = st.toggle(ui("adaptive"), value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
-    type_sel = st.multiselect(ui("question_types"), list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
+    st.markdown("### ⚙️ Quiz Settings")
+    num_questions = st.slider("Questions", 3, 50, 5, help="10 se zyada sawal batches me bante hain, thoda time lag sakta hai.")
+    difficulty = st.select_slider("Difficulty", ["Easy", "Medium", "Hard"], value="Medium")
+    adaptive = st.toggle("🎚️ Adaptive difficulty", value=False, help="Sahi karte jao to sawal mushkil, galat par aasaan hote jayenge.")
+    type_sel = st.multiselect("Question types", list(TYPE_MAP.keys()), default=["Multiple Choice", "True / False"])
     type_keys = [TYPE_MAP[x] for x in type_sel] or ["mcq"]
-    language = st.selectbox(ui("quiz_language"), ["English", "Hinglish", "Hindi"])
+    language = st.selectbox("Language", ["English", "Hinglish", "Hindi"])
     mode = st.radio(
         "Mode",
         ["Practice", "Exam", "Survival"],
