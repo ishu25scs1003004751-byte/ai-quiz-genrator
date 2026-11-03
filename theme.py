@@ -1,6 +1,6 @@
 """
 theme.py — premium look & feel for AI Quiz Arena.
-Pure CSS + HTML helpers with dynamic language switching support.
+Pure CSS + HTML helpers with dynamic language switching support and modern Glassmorphism Sidebar.
 """
 import html
 from datetime import datetime, timedelta
@@ -30,7 +30,7 @@ def _x(key, **fmt):
     return s.format(**fmt) if fmt else s
 
 def greeting():
-    h = (datetime.utcnow() + timedelta(hours=5, minutes=30)).hour  # IST
+    h = (datetime.utcnow() + timedelta(hours=5, minutes=30)).hour
     return _x("gm" if 5 <= h < 12 else "ga" if 12 <= h < 17 else "ge" if 17 <= h < 22 else "gn")
 
 def _e(s):
@@ -59,172 +59,71 @@ def hero_html(app_name, tagline, steps_html="", who=None, level=None, show_chips
         f"<div class='qf-steps'>{steps_html}</div></div>"
     )
 
-def tiles_html(level, xp, played, best_pct):
-    into = xp % 100
-    return (
-        "<div class='qf-tiles'>"
-        f"<div class='qf-tile t1'><div class='ic'>🎖️</div><div class='v'>{level}</div><div class='l'>{_e(_x('t_level'))}</div>"
-        f"<div class='bar' title='{_e(_x('xp_next', n=100 - into))}'><i style='width:{into}%'></i></div></div>"
-        f"<div class='qf-tile t2'><div class='ic'>⚡</div><div class='v'>{xp}</div><div class='l'>{_e(_x('t_xp'))}</div></div>"
-        f"<div class='qf-tile t3'><div class='ic'>🧠</div><div class='v'>{played}</div><div class='l'>{_e(_x('t_quiz'))}</div></div>"
-        f"<div class='qf-tile t4'><div class='ic'>🏆</div><div class='v'>{best_pct}%</div><div class='l'>{_e(_x('t_best'))}</div></div>"
-        "</div>"
-    )
-
-GLOW_JS = """<script>(function(){try{var D=window.parent.document;
-if(D.body.dataset.qfGlow==='1')return;D.body.dataset.qfGlow='1';
-D.addEventListener('pointermove',function(e){var h=D.querySelector('.qf-hero');if(!h)return;
-var r=h.getBoundingClientRect();h.style.setProperty('--mx',(e.clientX-r.left)+'px');h.style.setProperty('--my',(e.clientY-r.top)+'px');},{passive:true});
-}catch(e){}})();</script>"""
-
 PREMIUM_CSS = """
 <style>
 :root{ --card-solid:#111733; --glow:rgba(124,92,255,.38); --ease:cubic-bezier(.2,.8,.2,1); }
 ::selection{ background:rgba(124,92,255,.45); color:#fff; }
 html{ scroll-behavior:smooth; }
-*::-webkit-scrollbar{ width:10px; height:10px; }
-*::-webkit-scrollbar-thumb{ background:linear-gradient(180deg,#7C5CFF,#22D3EE); border-radius:99px; border:2px solid transparent; background-clip:padding-box; }
-*::-webkit-scrollbar-track{ background:transparent; }
 
+/* ── MODERN GLASS SIDEBAR STYLING ── */
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #0F172A 0%, #0B0F1E 100%) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-top: 1rem;
+}
+
+.sidebar-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.sidebar-card:hover {
+  border-color: rgba(124, 92, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.sidebar-card h3 {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  color: #A5B4FC !important;
+  margin-bottom: 10px !important;
+}
+
+/* ── GENERAL UI ELEMENTS ── */
 .stApp{ isolation:isolate; }
-.stApp::before{
-  content:""; position:fixed; inset:-25%; z-index:-1; pointer-events:none; filter:blur(50px); opacity:.9;
-  background:
-    radial-gradient(38% 32% at 18% 22%, rgba(124,92,255,.30), transparent 70%),
-    radial-gradient(34% 30% at 82% 16%, rgba(34,211,238,.22), transparent 70%),
-    radial-gradient(40% 34% at 70% 86%, rgba(255,200,87,.12), transparent 70%),
-    radial-gradient(30% 30% at 12% 90%, rgba(251,113,133,.12), transparent 70%);
-  animation:qf-drift 26s ease-in-out infinite alternate;
-}
-@keyframes qf-drift{ from{ transform:translate3d(-2%,-1%,0) scale(1); } to{ transform:translate3d(3%,2%,0) scale(1.08); } }
-@keyframes qf-up{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:none; } }
-
 .qf-hero{
-  --mx:70%; --my:0%;
   padding:30px 32px 26px; border-radius:30px; border:1px solid rgba(255,255,255,.16);
-  background:
-    linear-gradient(115deg, rgba(124,92,255,.85), rgba(79,140,255,.55) 45%, rgba(34,211,238,.45) 80%, rgba(124,92,255,.7)) 0 0/220% 220%;
-  animation:qf-flow 16s ease-in-out infinite;
-  box-shadow:0 30px 70px -28px rgba(124,92,255,.65), inset 0 1px 0 rgba(255,255,255,.25);
+  background: linear-gradient(115deg, rgba(124,92,255,.85), rgba(79,140,255,.55) 45%, rgba(34,211,238,.45) 80%, rgba(124,92,255,.7));
+  box-shadow:0 30px 70px -28px rgba(124,92,255,.65);
 }
-@keyframes qf-flow{ 0%,100%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } }
-.qf-hero:before{
-  content:""; position:absolute; inset:0; pointer-events:none; opacity:.55;
-  background:
-    linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px) 0 0/30px 30px,
-    linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px) 0 0/30px 30px;
-  -webkit-mask:radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 85%); mask:radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 85%);
+.qf-title{ font-size:3.1rem; background:linear-gradient(90deg,#fff 5%,#E6DFFF 50%,#BFF4FF 95%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.stButton>button, [data-testid="stFormSubmitButton"]>button{
+  border-radius:14px; min-height:46px; font-weight:700;
 }
-.qf-hero .qf-glow{ position:absolute; inset:0; pointer-events:none; background:radial-gradient(380px circle at var(--mx) var(--my), rgba(255,255,255,.22), transparent 60%); mix-blend-mode:soft-light; }
-.qf-orb{ position:absolute; border-radius:50%; filter:blur(2px); pointer-events:none; }
-.qf-orb.o1{ width:120px; height:120px; right:7%; top:14%; background:radial-gradient(circle at 30% 30%, #fff8, #FFC857aa 45%, transparent 70%); animation:qf-float 7s ease-in-out infinite; }
-.qf-orb.o2{ width:64px; height:64px; right:24%; bottom:10%; background:radial-gradient(circle at 30% 30%, #fff9, #22D3EEaa 50%, transparent 72%); animation:qf-float 9s ease-in-out -2s infinite; }
-.qf-orb.o3{ width:38px; height:38px; left:46%; top:8%; background:radial-gradient(circle at 30% 30%, #fff9, #FB7185aa 55%, transparent 75%); animation:qf-float 6s ease-in-out -4s infinite; }
-@keyframes qf-float{ 0%,100%{ transform:translateY(0) rotate(0); } 50%{ transform:translateY(-14px) rotate(8deg); } }
-.qf-hero > *{ position:relative; z-index:1; }
-.qf-hero .qf-glow, .qf-hero .qf-orb{ position:absolute; z-index:0; }
-.qf-hero-top{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-.qf-avatar{
-  width:46px; height:46px; border-radius:15px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1.2rem;
-  color:#0B0F1E; background:linear-gradient(135deg,#FFC857,#fff); box-shadow:0 8px 22px rgba(0,0,0,.28); font-family:'Space Grotesk',sans-serif;
-}
-.qf-greet .g1{ font-size:.82rem; color:rgba(255,255,255,.8); }
-.qf-greet .g2{ font-weight:700; font-size:1.05rem; color:#fff; max-width:42vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.qf-lvlpill{ margin-left:auto; padding:6px 14px; border-radius:99px; font-weight:700; font-size:.82rem; color:#0B0F1E; background:linear-gradient(135deg,#FFC857,#FFE29A); box-shadow:0 6px 18px rgba(255,200,87,.4); }
-.qf-title{ font-size:3.1rem; background:linear-gradient(90deg,#fff 5%,#E6DFFF 50%,#BFF4FF 95%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; text-shadow:none; }
-.qf-sub{ color:rgba(255,255,255,.88); }
-.qf-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-.qf-chips span{ font-size:.78rem; font-weight:600; padding:6px 12px; border-radius:99px; color:#fff; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.22); backdrop-filter:blur(8px); transition:transform .2s var(--ease), background .2s; }
-.qf-chips span:hover{ transform:translateY(-2px); background:rgba(255,255,255,.24); }
-.qf-step{ color:#fff; border-color:rgba(255,255,255,.35); background:rgba(0,0,0,.18); backdrop-filter:blur(6px); }
-.qf-step.on{ box-shadow:0 0 0 4px rgba(255,200,87,.25), 0 8px 20px rgba(255,200,87,.35); }
-.qf-step.done{ background:rgba(52,211,153,.18); color:#B6FFE0; border-color:rgba(52,211,153,.6); }
-
-.qf-tiles{ gap:14px; }
-.qf-tile{
-  position:relative; overflow:hidden; border-radius:20px; padding:16px 12px 14px; text-align:center;
-  background:linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.025)); border:1px solid var(--line);
-  transition:transform .25s var(--ease), box-shadow .25s var(--ease), border-color .25s;
-}
-.qf-tile:hover{ transform:translateY(-5px); border-color:rgba(124,92,255,.7); box-shadow:0 18px 40px -16px var(--glow); }
-.qf-tile .ic{ font-size:1.25rem; margin-bottom:2px; }
-.qf-tile .v{ font-size:1.75rem; background:linear-gradient(90deg,#fff,#C9BEFF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-.qf-tile.t2 .v{ background:linear-gradient(90deg,#FFE29A,#FFC857); -webkit-background-clip:text; background-clip:text; }
-.qf-tile.t4 .v{ background:linear-gradient(90deg,#B6FFE0,#34D399); -webkit-background-clip:text; background-clip:text; }
-.qf-tile .bar{ height:5px; border-radius:99px; background:rgba(255,255,255,.12); margin:9px 8px 0; overflow:hidden; }
-.qf-tile .bar i{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#7C5CFF,#22D3EE); transition:width 1s var(--ease); }
-
-.st-key-panel, .st-key-panel_login, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
-  border:1px solid transparent; border-radius:24px; padding:22px 24px;
-  background:
-    linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.02)) padding-box,
-    linear-gradient(135deg, rgba(124,92,255,.55), rgba(255,255,255,.08) 40%, rgba(34,211,238,.4)) border-box;
-  box-shadow:0 20px 50px -30px rgba(0,0,0,.7);
-  transition:box-shadow .3s var(--ease);
-}
-.st-key-panel:hover, .st-key-panel_pyq:hover, .st-key-panel_doubt:hover{ box-shadow:0 26px 60px -28px var(--glow); }
-.st-key-panel_login{ max-width:520px; margin:6px auto 0; }
-
-.stTabs [data-baseweb="tab-list"]{
-  gap:6px; padding:6px; border-radius:18px; background:rgba(255,255,255,.05); border:1px solid var(--line);
-  overflow-x:auto; scrollbar-width:none;
-}
-.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"]{ display:none !important; }
-.stTabs button[data-baseweb="tab"]{
-  height:46px; padding:0 18px; border-radius:13px; font-weight:700; color:var(--mute); white-space:nowrap;
-  transition:background .25s var(--ease), color .2s, transform .15s;
-}
-.stTabs button[data-baseweb="tab"]:hover{ color:var(--txt); background:rgba(255,255,255,.07); }
 .stTabs button[data-baseweb="tab"][aria-selected="true"]{
-  color:#fff; background:linear-gradient(135deg,#7C5CFF,#4F8CFF 60%,#22D3EE); box-shadow:0 10px 26px -8px rgba(124,92,255,.8);
-}
-.stTabs button[data-baseweb="tab"] p{ font-weight:700; }
-
-.stButton>button, .stDownloadButton>button, [data-testid="stFormSubmitButton"]>button{
-  position:relative; overflow:hidden; border-radius:15px; min-height:46px;
-  transition:transform .15s var(--ease), box-shadow .25s, border-color .2s, background .2s;
-}
-.stButton>button:hover, .stDownloadButton>button:hover{ box-shadow:0 12px 28px -14px var(--glow); }
-.stButton>button:active, .stDownloadButton>button:active{ transform:translateY(0) scale(.98); }
-.stButton>button[kind="primary"], [data-testid="stBaseButton-primary"]{
-  background:linear-gradient(120deg,#7C5CFF,#4F8CFF 50%,#22D3EE) 0 0/200% 100%; transition:background-position .6s var(--ease), transform .15s, box-shadow .25s;
-  box-shadow:0 14px 34px -12px rgba(124,92,255,.85);
-}
-.stButton>button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover{ background-position:100% 0; box-shadow:0 18px 42px -12px rgba(79,140,255,.9); }
-
-.stTextInput input, .stTextArea textarea, .stNumberInput input{
-  border-radius:14px !important; transition:box-shadow .2s, border-color .2s;
-}
-.stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus{
-  border-color:#7C5CFF !important; box-shadow:0 0 0 4px rgba(124,92,255,.22) !important;
-}
-div[data-baseweb="select"] > div{ border-radius:14px !important; border-color:var(--line) !important; transition:box-shadow .2s, border-color .2s; }
-div[data-baseweb="select"] > div:focus-within{ border-color:#7C5CFF !important; box-shadow:0 0 0 4px rgba(124,92,255,.2); }
-
-@media (max-width:640px){
-  .qf-hero{ padding:22px 18px 20px; border-radius:24px; }
-  .qf-title{ font-size:2.2rem; }
-  .qf-orb.o1{ width:80px; height:80px; right:-10px; }
-  .qf-qcard{ padding:20px 18px; } .qf-qtext{ font-size:1.25rem; }
-  .qf-tile .v{ font-size:1.45rem; }
-  .stTabs button[data-baseweb="tab"]{ padding:0 12px; height:42px; font-size:.86rem; }
-  .st-key-panel, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-panel_login{ padding:16px 14px; border-radius:20px; }
+  color:#fff; background:linear-gradient(135deg,#7C5CFF,#4F8CFF 60%,#22D3EE);
 }
 </style>
 """
 
 PREMIUM_LIGHT_CSS = """
 <style>
-:root{ --card-solid:#ffffff; --glow:rgba(124,92,255,.25); }
-.stApp::before{ opacity:.55; }
-section[data-testid="stSidebar"]{ background:linear-gradient(180deg,#FFFFFF,#F1F2FB) !important; box-shadow:10px 0 40px -24px rgba(30,35,80,.3); }
-.st-key-panel, .st-key-panel_login, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
-  background:
-    linear-gradient(160deg, rgba(255,255,255,.95), rgba(255,255,255,.8)) padding-box,
-    linear-gradient(135deg, rgba(124,92,255,.5), rgba(30,35,80,.08) 40%, rgba(34,211,238,.4)) border-box;
-  box-shadow:0 20px 50px -34px rgba(30,35,80,.45);
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #F8FAFC 0%, #E2E8F0 100%) !important;
 }
-.qf-tile{ background:linear-gradient(160deg,#fff,rgba(255,255,255,.7)); }
-.stTabs [data-baseweb="tab-list"]{ background:rgba(255,255,255,.85); }
+.sidebar-card {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+}
+.sidebar-card h3 {
+  color: #4F46E5 !important;
+}
 </style>
 """
