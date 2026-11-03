@@ -1,57 +1,61 @@
 """
 i18n.py — Complete language translation module for AI Quiz Arena.
-Handles English 🇬🇧 and हिन्दी 🇮🇳 language switching seamlessly.
 """
 import functools
 import streamlit as st
 
-LANGS = {"English 🇬🇧": "en", "हिन्दी 🇮🇳": "hi"}
-LANG_ORDER = ["English 🇬🇧", "हिन्दी 🇮🇳"]
-DEFAULT = "en"
+LANGS = {"Hinglish": "hg", "English": "en", "हिन्दी": "hi"}
+LANG_ORDER = ["Hinglish", "English", "हिन्दी"]
+DEFAULT = "hg"
 
 QUIZ_LANG_OF = {
+    "hg": "Hinglish",
     "en": "English",
     "hi": "Hindi",
-    "English 🇬🇧": "English",
-    "हिन्दी 🇮🇳": "Hindi"
+    "Hinglish": "Hinglish",
+    "English": "English",
+    "हिन्दी": "Hindi"
 }
 
 TABLE = [
-    ("### ⚙️ Quiz Settings", "### ⚙️ क्विज़ सेटिंग्स"),
-    ("Questions", "प्रश्नों की संख्या"),
-    ("Difficulty", "कठिनाई"),
-    ("Easy", "आसान"),
-    ("Medium", "मध्यम"),
-    ("Hard", "कठिन"),
-    ("🎚️ Adaptive difficulty", "🎚️ अनुकूल कठिनाई"),
-    ("Question types", "प्रश्नों के प्रकार"),
-    ("Language", "भाषा"),
-    ("Mode", "मोड"),
-    ("Practice", "प्रैक्टिस"),
-    ("Exam", "एग्ज़ाम"),
-    ("Survival", "सर्वाइवल"),
-    ("🧠 Quiz Arena", "🧠 क्विज़ एरीना"),
-    ("🏛️ Govt Exam PYQs", "🏛️ सरकारी परीक्षा PYQ"),
-    ("🔍 Doubt Solver", "🔍 डाउट सॉल्वर"),
-    ("Where will the content come from?", "सामग्री कहाँ से आएगी?"),
-    ("💡 Topic", "💡 टॉपिक"),
-    ("📄 PDF", "📄 PDF"),
-    ("🖼️ Photo / Camera", "🖼️ फ़ोटो / कैमरा"),
-    ("📝 Notes", "📝 नोट्स"),
-    ("Which topic do you want a quiz on?", "किस टॉपिक पर क्विज़ चाहिए?"),
-    ("Make quiz", "✨ क्विज़ बनाओ"),
-    ("Write your doubt here", "अपना डाउट यहाँ लिखो"),
-    ("💡 Explain", "💡 समझाओ"),
+    ("### ⚙️ Quiz Settings", None, "### ⚙️ क्विज़ सेटिंग्स"),
+    ("Questions", None, "प्रश्नों की संख्या"),
+    ("Difficulty", None, "कठिनाई"),
+    ("Easy", None, "आसान"),
+    ("Medium", None, "मध्यम"),
+    ("Hard", None, "कठिन"),
+    ("🎚️ Adaptive difficulty", None, "🎚️ अनुकूल कठिनाई"),
+    ("Question types", None, "प्रश्नों के प्रकार"),
+    ("Language", "Quiz language", "क्विज़ की भाषा"),
+    ("Mode", None, "मोड"),
+    ("Practice", None, "प्रैक्टिस"),
+    ("Exam", None, "एग्ज़ाम"),
+    ("Survival", None, "सर्वाइवल"),
+    ("🧠 Quiz Arena", None, "🧠 क्विज़ एरीना"),
+    ("🏛️ Govt Exam PYQs", None, "🏛️ सरकारी परीक्षा PYQ"),
+    ("🔍 Doubt Solver", None, "🔍 डाउट सॉल्वर"),
+    ("Where will the content come from?", None, "सामग्री कहाँ से आएगी?"),
+    ("💡 Topic", None, "💡 टॉपिक"),
+    ("📄 PDF", None, "📄 PDF"),
+    ("🖼️ Photo / Camera", None, "🖼️ फ़ोटो / कैमरा"),
+    ("📝 Notes", None, "📝 नोट्स"),
+    ("Which topic do you want a quiz on?", None, "किस टॉपिक पर क्विज़ चाहिए?"),
+    ("Make quiz", "✨ Make quiz", "✨ क्विज़ बनाओ"),
+    ("Write your doubt here", None, "अपना डाउट यहाँ लिखो"),
+    ("💡 Explain", None, "💡 समझाओ"),
 ]
 
 KEYS = {
     "app_tag": {
+        "hg": "Topic, PDF ya notes ki photo do — AI turant quiz banata hai.",
         "en": "Provide a topic, PDF or notes photo — AI generates quizzes instantly.",
         "hi": "टॉपिक, PDF या नोट्स की फ़ोटो दो — AI तुरंत क्विज़ बनाता है।"
     }
 }
 
-_LOOKUP = {src: hi for src, hi in TABLE}
+_LOOKUP = {}
+for _src, _en, _hi in TABLE:
+    _LOOKUP[_src] = {"en": _en if _en is not None else _src, "hi": _hi if _hi is not None else _src}
 
 def cur():
     try:
@@ -70,13 +74,14 @@ def tr(s):
     if not isinstance(s, str):
         return s
     lang = cur()
-    if lang == "en":
+    if lang == DEFAULT:
         return s
-    return _LOOKUP.get(s, s)
+    row = _LOOKUP.get(s)
+    return row[lang] if row and lang in row else s
 
 def t(key, **fmt):
     row = KEYS.get(key, {})
-    txt = row.get(cur(), row.get("en", key))
+    txt = row.get(cur()) or row.get("hg", key)
     return txt.format(**fmt) if fmt else txt
 
 _TEXT_FIRST = (
@@ -94,7 +99,7 @@ def _fmt_func(o):
 def _wrap(fn, name, is_method):
     @functools.wraps(fn)
     def inner(*args, **kwargs):
-        if cur() == "hi":
+        if cur() != DEFAULT:
             args = list(args)
             pos = 1 if is_method else 0
             if name == "tabs":
