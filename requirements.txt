@@ -3,3 +3,5 @@ pypdf
 groq
 pandas
 requests
+extra-streamlit-components
+supabase
