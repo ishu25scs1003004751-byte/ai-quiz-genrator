@@ -7,26 +7,25 @@ from datetime import datetime, timedelta
 import i18n
 
 TXT = {
-    "gm": {"en": "Good morning", "hi": "सुप्रभात"},
-    "ga": {"en": "Good afternoon", "hi": "नमस्कार"},
-    "ge": {"en": "Good evening", "hi": "शुभ संध्या"},
-    "gn": {"en": "Late-night grind", "hi": "शुभ रात्रि"},
-    "guest": {"en": "Guest", "hi": "मेहमान"},
-    "lvl": {"en": "Level", "hi": "लेवल"},
-    "xp_next": {"en": "{n} XP to next level", "hi": "अगले लेवल तक {n} XP"},
-    "t_level": {"en": "Level", "hi": "लेवल"},
-    "t_xp": {"en": "Total XP", "hi": "कुल XP"},
-    "t_quiz": {"en": "Quizzes played", "hi": "खेले क्विज़"},
-    "t_best": {"en": "Best score", "hi": "सर्वश्रेष्ठ स्कोर"},
-    "c1": {"en": "SSC · NEET · JEE · UP CNET", "hi": "SSC · NEET · JEE · UP CNET"},
-    "c2": {"en": "Solve doubts with camera", "hi": "कैमरे से डाउट हल करो"},
-    "c3": {"en": "English & Hindi Support", "hi": "अंग्रेज़ी एवं हिन्दी सहायता"},
+    "gm": {"hg": "Suprabhat", "en": "Good morning", "hi": "सुप्रभात"},
+    "ga": {"hg": "Namaste", "en": "Good afternoon", "hi": "नमस्कार"},
+    "ge": {"hg": "Shubh sandhya", "en": "Good evening", "hi": "शुभ संध्या"},
+    "gn": {"hg": "Shubh ratri", "en": "Late-night grind", "hi": "शुभ रात्रि"},
+    "guest": {"hg": "Mehmaan", "en": "Guest", "hi": "मेहमान"},
+    "lvl": {"hg": "Level", "en": "Level", "hi": "लेवल"},
+    "xp_next": {"hg": "agle level tak {n} XP", "en": "{n} XP to next level", "hi": "अगले लेवल तक {n} XP"},
+    "t_level": {"hg": "Level", "en": "Level", "hi": "लेवल"},
+    "t_xp": {"hg": "Total XP", "en": "Total XP", "hi": "कुल XP"},
+    "t_quiz": {"hg": "Quizzes khele", "en": "Quizzes played", "hi": "खेले क्विज़"},
+    "t_best": {"hg": "Best score", "en": "Best score", "hi": "सर्वश्रेष्ठ स्कोर"},
+    "c1": {"hg": "SSC · NEET · JEE · UP CNET", "en": "SSC · NEET · JEE · UP CNET", "hi": "SSC · NEET · JEE · UP CNET"},
+    "c2": {"hg": "Camera se doubt solve", "en": "Solve doubts with camera", "hi": "कैमरे से डाउट हल करो"},
+    "c3": {"hg": "3 bhashayein", "en": "3 languages", "hi": "3 भाषाएँ"},
 }
 
 def _x(key, **fmt):
     row = TXT[key]
-    lang = i18n.cur()
-    s = row.get(lang, row["en"])
+    s = row.get(i18n.cur()) or row["hg"]
     return s.format(**fmt) if fmt else s
 
 def greeting():
@@ -65,7 +64,7 @@ PREMIUM_CSS = """
 ::selection{ background:rgba(124,92,255,.45); color:#fff; }
 html{ scroll-behavior:smooth; }
 
-/* ── MODERN GLASS SIDEBAR STYLING ── */
+/* ── SLEEK GLASS SIDEBAR ── */
 section[data-testid="stSidebar"] {
   background: linear-gradient(180deg, #0F172A 0%, #0B0F1E 100%) !important;
   border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
