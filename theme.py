@@ -1,50 +1,42 @@
 """
 theme.py — premium look & feel for AI Quiz Arena.
-
-Loaded AFTER the app's base CSS, so these rules refine/override it. Pure CSS + a little HTML:
-no extra libraries, nothing to install. Respects light mode and `prefers-reduced-motion`.
+Pure CSS + HTML helpers with dynamic language switching support.
 """
 import html
 from datetime import datetime, timedelta
-
 import i18n
 
-# small text table for the new hero / tiles (hg = Hinglish, en, hi)
 TXT = {
-    "gm": {"hg": "Suprabhat", "en": "Good morning", "hi": "सुप्रभात"},
-    "ga": {"hg": "Namaste", "en": "Good afternoon", "hi": "नमस्कार"},
-    "ge": {"hg": "Shubh sandhya", "en": "Good evening", "hi": "शुभ संध्या"},
-    "gn": {"hg": "Shubh ratri", "en": "Late-night grind", "hi": "शुभ रात्रि"},
-    "guest": {"hg": "Mehmaan", "en": "Guest", "hi": "मेहमान"},
-    "lvl": {"hg": "Level", "en": "Level", "hi": "लेवल"},
-    "xp_next": {"hg": "agle level tak {n} XP", "en": "{n} XP to next level", "hi": "अगले लेवल तक {n} XP"},
-    "t_level": {"hg": "Level", "en": "Level", "hi": "लेवल"},
-    "t_xp": {"hg": "Total XP", "en": "Total XP", "hi": "कुल XP"},
-    "t_quiz": {"hg": "Quizzes khele", "en": "Quizzes played", "hi": "खेले क्विज़"},
-    "t_best": {"hg": "Best score", "en": "Best score", "hi": "सर्वश्रेष्ठ स्कोर"},
-    "c1": {"hg": "SSC · NEET · JEE · UP CNET", "en": "SSC · NEET · JEE · UP CNET", "hi": "SSC · NEET · JEE · UP CNET"},
-    "c2": {"hg": "Camera se doubt solve", "en": "Solve doubts with camera", "hi": "कैमरे से डाउट हल करो"},
-    "c3": {"hg": "3 bhashayein", "en": "3 languages", "hi": "3 भाषाएँ"},
+    "gm": {"en": "Good morning", "hi": "सुप्रभात"},
+    "ga": {"en": "Good afternoon", "hi": "नमस्कार"},
+    "ge": {"en": "Good evening", "hi": "शुभ संध्या"},
+    "gn": {"en": "Late-night grind", "hi": "शुभ रात्रि"},
+    "guest": {"en": "Guest", "hi": "मेहमान"},
+    "lvl": {"en": "Level", "hi": "लेवल"},
+    "xp_next": {"en": "{n} XP to next level", "hi": "अगले लेवल तक {n} XP"},
+    "t_level": {"en": "Level", "hi": "लेवल"},
+    "t_xp": {"en": "Total XP", "hi": "कुल XP"},
+    "t_quiz": {"en": "Quizzes played", "hi": "खेले क्विज़"},
+    "t_best": {"en": "Best score", "hi": "सर्वश्रेष्ठ स्कोर"},
+    "c1": {"en": "SSC · NEET · JEE · UP CNET", "hi": "SSC · NEET · JEE · UP CNET"},
+    "c2": {"en": "Solve doubts with camera", "hi": "कैमरे से डाउट हल करो"},
+    "c3": {"en": "English & Hindi Support", "hi": "अंग्रेज़ी एवं हिन्दी सहायता"},
 }
-
 
 def _x(key, **fmt):
     row = TXT[key]
-    s = row.get(i18n.cur()) or row["hg"]
+    lang = i18n.cur()
+    s = row.get(lang, row["en"])
     return s.format(**fmt) if fmt else s
-
 
 def greeting():
     h = (datetime.utcnow() + timedelta(hours=5, minutes=30)).hour  # IST
     return _x("gm" if 5 <= h < 12 else "ga" if 12 <= h < 17 else "ge" if 17 <= h < 22 else "gn")
 
-
 def _e(s):
     return html.escape(str(s))
 
-
 def hero_html(app_name, tagline, steps_html="", who=None, level=None, show_chips=True):
-    """who = display name (or None for the logged-out hero)."""
     top = ""
     if who is not None:
         initial = (_e(who)[:1] or "?").upper()
@@ -67,7 +59,6 @@ def hero_html(app_name, tagline, steps_html="", who=None, level=None, show_chips
         f"<div class='qf-steps'>{steps_html}</div></div>"
     )
 
-
 def tiles_html(level, xp, played, best_pct):
     into = xp % 100
     return (
@@ -80,14 +71,11 @@ def tiles_html(level, xp, played, best_pct):
         "</div>"
     )
 
-
-# Follows the mouse / finger inside the hero (sets --mx / --my). Added once, safe to re-run.
 GLOW_JS = """<script>(function(){try{var D=window.parent.document;
 if(D.body.dataset.qfGlow==='1')return;D.body.dataset.qfGlow='1';
 D.addEventListener('pointermove',function(e){var h=D.querySelector('.qf-hero');if(!h)return;
 var r=h.getBoundingClientRect();h.style.setProperty('--mx',(e.clientX-r.left)+'px');h.style.setProperty('--my',(e.clientY-r.top)+'px');},{passive:true});
 }catch(e){}})();</script>"""
-
 
 PREMIUM_CSS = """
 <style>
@@ -98,7 +86,6 @@ html{ scroll-behavior:smooth; }
 *::-webkit-scrollbar-thumb{ background:linear-gradient(180deg,#7C5CFF,#22D3EE); border-radius:99px; border:2px solid transparent; background-clip:padding-box; }
 *::-webkit-scrollbar-track{ background:transparent; }
 
-/* ── Living background: slow drifting aurora ── */
 .stApp{ isolation:isolate; }
 .stApp::before{
   content:""; position:fixed; inset:-25%; z-index:-1; pointer-events:none; filter:blur(50px); opacity:.9;
@@ -110,10 +97,8 @@ html{ scroll-behavior:smooth; }
   animation:qf-drift 26s ease-in-out infinite alternate;
 }
 @keyframes qf-drift{ from{ transform:translate3d(-2%,-1%,0) scale(1); } to{ transform:translate3d(3%,2%,0) scale(1.08); } }
-
 @keyframes qf-up{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:none; } }
 
-/* ── HERO ── */
 .qf-hero{
   --mx:70%; --my:0%;
   padding:30px 32px 26px; border-radius:30px; border:1px solid rgba(255,255,255,.16);
@@ -155,7 +140,6 @@ html{ scroll-behavior:smooth; }
 .qf-step.on{ box-shadow:0 0 0 4px rgba(255,200,87,.25), 0 8px 20px rgba(255,200,87,.35); }
 .qf-step.done{ background:rgba(52,211,153,.18); color:#B6FFE0; border-color:rgba(52,211,153,.6); }
 
-/* ── Stat tiles ── */
 .qf-tiles{ gap:14px; }
 .qf-tile{
   position:relative; overflow:hidden; border-radius:20px; padding:16px 12px 14px; text-align:center;
@@ -170,7 +154,6 @@ html{ scroll-behavior:smooth; }
 .qf-tile .bar{ height:5px; border-radius:99px; background:rgba(255,255,255,.12); margin:9px 8px 0; overflow:hidden; }
 .qf-tile .bar i{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#7C5CFF,#22D3EE); transition:width 1s var(--ease); }
 
-/* ── Panels (glass with gradient edge) ── */
 .st-key-panel, .st-key-panel_login, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-optbox, .st-key-morebox{
   border:1px solid transparent; border-radius:24px; padding:22px 24px;
   background:
@@ -182,7 +165,6 @@ html{ scroll-behavior:smooth; }
 .st-key-panel:hover, .st-key-panel_pyq:hover, .st-key-panel_doubt:hover{ box-shadow:0 26px 60px -28px var(--glow); }
 .st-key-panel_login{ max-width:520px; margin:6px auto 0; }
 
-/* ── Tabs → segmented pill bar ── */
 .stTabs [data-baseweb="tab-list"]{
   gap:6px; padding:6px; border-radius:18px; background:rgba(255,255,255,.05); border:1px solid var(--line);
   overflow-x:auto; scrollbar-width:none;
@@ -198,7 +180,6 @@ html{ scroll-behavior:smooth; }
 }
 .stTabs button[data-baseweb="tab"] p{ font-weight:700; }
 
-/* ── Buttons ── */
 .stButton>button, .stDownloadButton>button, [data-testid="stFormSubmitButton"]>button{
   position:relative; overflow:hidden; border-radius:15px; min-height:46px;
   transition:transform .15s var(--ease), box-shadow .25s, border-color .2s, background .2s;
@@ -210,13 +191,7 @@ html{ scroll-behavior:smooth; }
   box-shadow:0 14px 34px -12px rgba(124,92,255,.85);
 }
 .stButton>button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover{ background-position:100% 0; box-shadow:0 18px 42px -12px rgba(79,140,255,.9); }
-.stButton>button[kind="primary"]::after, [data-testid="stBaseButton-primary"]::after{
-  content:""; position:absolute; top:0; left:-60%; width:40%; height:100%; transform:skewX(-20deg);
-  background:linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); transition:left .7s var(--ease);
-}
-.stButton>button[kind="primary"]:hover::after, [data-testid="stBaseButton-primary"]:hover::after{ left:130%; }
 
-/* ── Inputs ── */
 .stTextInput input, .stTextArea textarea, .stNumberInput input{
   border-radius:14px !important; transition:box-shadow .2s, border-color .2s;
 }
@@ -225,82 +200,7 @@ html{ scroll-behavior:smooth; }
 }
 div[data-baseweb="select"] > div{ border-radius:14px !important; border-color:var(--line) !important; transition:box-shadow .2s, border-color .2s; }
 div[data-baseweb="select"] > div:focus-within{ border-color:#7C5CFF !important; box-shadow:0 0 0 4px rgba(124,92,255,.2); }
-[data-testid="stFileUploaderDropzone"]{
-  border:1.6px dashed rgba(124,92,255,.55) !important; border-radius:18px !important; background:rgba(124,92,255,.07) !important; transition:background .2s, transform .2s;
-}
-[data-testid="stFileUploaderDropzone"]:hover{ background:rgba(124,92,255,.14) !important; transform:scale(1.01); }
-[data-testid="stCameraInput"] > div, [data-testid="stCameraInput"] video, [data-testid="stCameraInput"] img{ border-radius:20px; overflow:hidden; }
-[data-testid="stCameraInput"] video{ box-shadow:0 20px 50px -20px rgba(0,0,0,.8); }
 
-/* ── Source pills / radio pills ── */
-.st-key-srcpick label[data-baseweb="radio"]{ padding:10px 18px; font-weight:600; transition:all .2s var(--ease); }
-.st-key-srcpick label[data-baseweb="radio"]:hover{ transform:translateY(-2px); border-color:var(--cyan); }
-.st-key-srcpick label[data-baseweb="radio"]:has(input:checked){ background:linear-gradient(135deg,rgba(124,92,255,.5),rgba(34,211,238,.28)); box-shadow:0 10px 26px -12px var(--glow); }
-
-/* ── Progress ── */
-.stProgress > div > div{ background:rgba(255,255,255,.08) !important; border-radius:99px; height:10px; }
-.stProgress > div > div > div > div{
-  border-radius:99px; background-size:200% 100%; animation:qf-slide 3s linear infinite;
-  background-image:linear-gradient(90deg,#7C5CFF,#22D3EE,#7C5CFF);
-}
-@keyframes qf-slide{ to{ background-position:-200% 0; } }
-
-/* ── Question card & options ── */
-.qf-qcard{
-  border:1px solid transparent; border-radius:26px; padding:26px 28px;
-  background:
-    linear-gradient(160deg, rgba(124,92,255,.16), rgba(255,255,255,.02)) padding-box,
-    linear-gradient(135deg, rgba(124,92,255,.7), rgba(255,255,255,.08) 45%, rgba(255,200,87,.5)) border-box;
-  box-shadow:0 24px 60px -30px var(--glow);
-}
-.qf-qnum{ letter-spacing:.08em; text-transform:uppercase; }
-.qf-qtext{ font-size:1.5rem; }
-.qf-tag{ backdrop-filter:blur(6px); background:rgba(255,255,255,.05); }
-.st-key-optbox label[data-baseweb="radio"], .st-key-optbox label[data-baseweb="checkbox"]{
-  border-radius:16px; padding:14px 16px; cursor:pointer; transition:transform .2s var(--ease), border-color .2s, background .2s, box-shadow .25s;
-}
-.st-key-optbox label[data-baseweb="radio"]:hover, .st-key-optbox label[data-baseweb="checkbox"]:hover{ transform:translateX(4px); box-shadow:0 10px 26px -16px var(--glow); }
-.st-key-optbox label:has(input:checked){ box-shadow:0 0 0 3px rgba(124,92,255,.28), 0 14px 34px -14px var(--glow); transform:translateX(4px); }
-.st-key-optbox label[data-baseweb="radio"]::before, .st-key-optbox label[data-baseweb="checkbox"]::before{ width:32px; height:32px; border-radius:11px; transition:transform .2s var(--ease), background .2s; }
-.st-key-optbox label:has(input:checked)::before{ transform:scale(1.1) rotate(-4deg); }
-
-/* ── Feedback, hints, alerts ── */
-@keyframes qf-pop{ 0%{ opacity:0; transform:scale(.96) translateY(6px); } 100%{ opacity:1; transform:none; } }
-.qf-fb{ position:relative; border-radius:18px; padding:16px 20px 16px 22px; animation:qf-pop .35s var(--ease) both; overflow:hidden; }
-.qf-fb:before{ content:""; position:absolute; left:0; top:0; bottom:0; width:5px; }
-.qf-fb.ok:before{ background:var(--good); } .qf-fb.no:before{ background:var(--bad); } .qf-fb.mid:before{ background:var(--amber); }
-.qf-fb.ok{ box-shadow:0 14px 34px -22px rgba(52,211,153,.9); } .qf-fb.no{ box-shadow:0 14px 34px -22px rgba(251,113,133,.9); }
-[data-testid="stAlert"]{ border-radius:16px; border:1px solid var(--line); backdrop-filter:blur(6px); animation:qf-pop .35s var(--ease) both; }
-div[data-testid="stExpander"]{ border-radius:18px; overflow:hidden; transition:border-color .2s, box-shadow .25s; }
-div[data-testid="stExpander"]:hover{ border-color:rgba(124,92,255,.55); box-shadow:0 14px 34px -22px var(--glow); }
-.qf-hearts{ font-size:1.3rem; filter:drop-shadow(0 0 8px rgba(251,113,133,.6)); }
-
-/* ── Chat (doubt solver) ── */
-[data-testid="stChatMessage"]{
-  background:linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border:1px solid var(--line);
-  border-radius:20px; padding:14px 16px; margin-bottom:10px;
-}
-
-/* ── Result ── */
-.qf-ring{ filter:drop-shadow(0 0 22px var(--ring-color)); }
-.qf-ring-in .big{ background:linear-gradient(90deg,#fff,#C9BEFF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-@keyframes qf-badge{ 0%{ transform:scale(.4); opacity:0; } 70%{ transform:scale(1.12); } 100%{ transform:scale(1); opacity:1; } }
-.qf-badge{ animation:qf-badge .6s var(--ease) both; box-shadow:0 10px 26px -12px rgba(255,200,87,.7); }
-.qf-badge:nth-child(2){ animation-delay:.1s; } .qf-badge:nth-child(3){ animation-delay:.2s; } .qf-badge:nth-child(4){ animation-delay:.3s; }
-.qf-flash{ border-radius:28px; box-shadow:0 26px 60px -30px var(--glow); transition:transform .3s var(--ease); }
-.qf-flash:hover{ transform:translateY(-3px) rotate(-.4deg); }
-
-/* ── Sidebar ── */
-section[data-testid="stSidebar"]{
-  background:linear-gradient(180deg,#10163A,#0B0F1E) !important; border-right:1px solid var(--line); box-shadow:10px 0 40px -20px rgba(0,0,0,.7);
-}
-section[data-testid="stSidebar"] h3{ font-size:1.05rem; margin-top:.6rem; }
-section[data-testid="stSidebar"] .stProgress > div > div{ height:8px; }
-section[data-testid="stSidebar"] hr{ border-color:var(--line); }
-#qf-sb-toggle{ transition:transform .2s var(--ease), box-shadow .2s; }
-#qf-sb-toggle:active{ transform:scale(.94); }
-
-/* ── Small screens ── */
 @media (max-width:640px){
   .qf-hero{ padding:22px 18px 20px; border-radius:24px; }
   .qf-title{ font-size:2.2rem; }
@@ -309,9 +209,6 @@ section[data-testid="stSidebar"] hr{ border-color:var(--line); }
   .qf-tile .v{ font-size:1.45rem; }
   .stTabs button[data-baseweb="tab"]{ padding:0 12px; height:42px; font-size:.86rem; }
   .st-key-panel, .st-key-panel_pyq, .st-key-panel_doubt, .st-key-panel_login{ padding:16px 14px; border-radius:20px; }
-}
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{ animation:none !important; transition:none !important; }
 }
 </style>
 """
@@ -327,18 +224,7 @@ section[data-testid="stSidebar"]{ background:linear-gradient(180deg,#FFFFFF,#F1F
     linear-gradient(135deg, rgba(124,92,255,.5), rgba(30,35,80,.08) 40%, rgba(34,211,238,.4)) border-box;
   box-shadow:0 20px 50px -34px rgba(30,35,80,.45);
 }
-.qf-qcard{
-  background:
-    linear-gradient(160deg, rgba(124,92,255,.10), rgba(255,255,255,.95)) padding-box,
-    linear-gradient(135deg, rgba(124,92,255,.6), rgba(30,35,80,.08) 45%, rgba(255,200,87,.6)) border-box;
-}
 .qf-tile{ background:linear-gradient(160deg,#fff,rgba(255,255,255,.7)); }
-.qf-tile .v{ background:linear-gradient(90deg,#4B3FD1,#7C5CFF); -webkit-background-clip:text; background-clip:text; }
-.qf-tile.t2 .v{ background:linear-gradient(90deg,#B77900,#E39A00); -webkit-background-clip:text; background-clip:text; }
-.qf-tile.t4 .v{ background:linear-gradient(90deg,#0B8F63,#34D399); -webkit-background-clip:text; background-clip:text; }
-.qf-ring-in .big{ background:linear-gradient(90deg,#4B3FD1,#7C5CFF); -webkit-background-clip:text; background-clip:text; }
 .stTabs [data-baseweb="tab-list"]{ background:rgba(255,255,255,.85); }
-.stTabs button[data-baseweb="tab"]:hover{ background:rgba(124,92,255,.08); }
-[data-testid="stChatMessage"]{ background:rgba(255,255,255,.85); }
 </style>
 """
