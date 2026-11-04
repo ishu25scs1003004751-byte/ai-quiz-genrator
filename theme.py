@@ -9,29 +9,12 @@ from datetime import datetime, timedelta
 
 import i18n
 
-# small text table for the new hero / tiles (hg = Hinglish, en, hi)
-TXT = {
-    "gm": {"hg": "Suprabhat", "en": "Good morning", "hi": "सुप्रभात"},
-    "ga": {"hg": "Namaste", "en": "Good afternoon", "hi": "नमस्कार"},
-    "ge": {"hg": "Shubh sandhya", "en": "Good evening", "hi": "शुभ संध्या"},
-    "gn": {"hg": "Shubh ratri", "en": "Late-night grind", "hi": "शुभ रात्रि"},
-    "guest": {"hg": "Mehmaan", "en": "Guest", "hi": "मेहमान"},
-    "lvl": {"hg": "Level", "en": "Level", "hi": "लेवल"},
-    "xp_next": {"hg": "agle level tak {n} XP", "en": "{n} XP to next level", "hi": "अगले लेवल तक {n} XP"},
-    "t_level": {"hg": "Level", "en": "Level", "hi": "लेवल"},
-    "t_xp": {"hg": "Total XP", "en": "Total XP", "hi": "कुल XP"},
-    "t_quiz": {"hg": "Quizzes khele", "en": "Quizzes played", "hi": "खेले क्विज़"},
-    "t_best": {"hg": "Best score", "en": "Best score", "hi": "सर्वश्रेष्ठ स्कोर"},
-    "c1": {"hg": "SSC · NEET · JEE · UP CNET", "en": "SSC · NEET · JEE · UP CNET", "hi": "SSC · NEET · JEE · UP CNET"},
-    "c2": {"hg": "Camera se doubt solve", "en": "Solve doubts with camera", "hi": "कैमरे से डाउट हल करो"},
-    "c3": {"hg": "3 bhashayein", "en": "3 languages", "hi": "3 भाषाएँ"},
-}
+# All text now comes from the shared catalog in i18n.py (English + हिंदी), so there is a single source of truth.
+_KEY = {"t_level": "tile.level", "t_xp": "tile.xp", "t_quiz": "tile.played", "t_best": "tile.best"}
 
 
 def _x(key, **fmt):
-    row = TXT[key]
-    s = row.get(i18n.cur()) or row["hg"]
-    return s.format(**fmt) if fmt else s
+    return i18n.tr(_KEY.get(key, "th." + key), **fmt)
 
 
 def greeting():
