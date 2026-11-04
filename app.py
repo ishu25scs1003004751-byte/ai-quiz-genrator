@@ -17,6 +17,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 
+import avatar3d
 import i18n
 from i18n import tr
 
@@ -2030,6 +2031,7 @@ with st.sidebar:
         auto_read = st.toggle(tr("side.auto_read"), value=False, key="auto_read", help=tr("side.auto_read_help"))
         tts_rate = st.slider(tr("side.speed"), 0.6, 1.4, 1.0, 0.1, key="tts_rate")
         st.toggle(tr("side.light"), value=False, key="light")
+        st.toggle(tr("side.tutor"), value=True, key="tutor_on")
     with st.expander(tr("side.advanced")):
         model = st.selectbox(tr("side.model"), MODELS, key="model_sel", help=tr("side.model_help"))
 
@@ -2595,6 +2597,8 @@ def render_doubt_tab(cfg):
 # STAGE · SETUP
 # ═════════════════════════════════════════════════════════════
 if st.session_state.stage == "setup":
+    if st.session_state.get("tutor_on", True):
+        avatar3d.render("idle", say=tr("av.hello"), height=190)
     hist = st.session_state.history
     best_pct = max(h["pct"] for h in hist) if hist else 0
     st.markdown(
@@ -2661,6 +2665,14 @@ elif st.session_state.stage == "quiz":
         countdown(limit, qid, i, total, instant)
     if quiz_limit and quiz_countdown is not None:
         quiz_countdown(quiz_limit, qid, i)
+
+    if ss.get("tutor_on", True):
+        if locked and instant:
+            _ok = is_correct(i)
+            _mood, _say = ("correct", tr("av.correct")) if _ok else ("wrong", tr("av.timeup") if ss.timed_out.get(i) else tr("av.wrong"))
+        else:
+            _mood, _say = "think", tr("av.think")
+        avatar3d.render(_mood, say=_say, height=190, nonce=f"{qid}-{i}-{int(bool(locked))}")
 
     type_label = tr(f"qtype.{qtype_now}")
     lv_tag = f"<span class='qf-tag lv'>🎚️ {esc(i18n.fmt('diff')(LEVEL_NAME[q['level']]))}</span>" if is_adaptive else ""
@@ -2842,6 +2854,9 @@ else:
 
     st.markdown(f"## {title}")
     st.caption(msg)
+    if ss.get("tutor_on", True):
+        _rm, _rs = ("correct", tr("av.great")) if pct >= 80 else (("idle", tr("av.good")) if pct >= 50 else ("wrong", tr("av.keep")))
+        avatar3d.render(_rm, say=_rs, height=200, nonce=f"res-{ss.quiz_id}")
     _m = ss.meta.get("marks", 1.0)
     st.caption(
         tr("res.marking", m=fmt_marks(_m), p=fmt_marks(_m * ss.meta.get("neg", 0.0)), nn=tr("res.no_neg_num") if ss.meta.get("no_neg_types") else "")
