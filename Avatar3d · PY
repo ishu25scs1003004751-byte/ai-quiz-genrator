@@ -1,0 +1,223 @@
+"""
+avatar3d.py — a 3D human tutor for AI Quiz Arena.
+
+A stylised 3D character (three.js, loaded from cdnjs) that lives in a Streamlit component:
+  idle     → breathing, blinking, head follows the mouse / finger
+  correct  → smiles, jumps, both arms up
+  wrong    → shakes head, shrugs, sad mouth
+  think    → hand on chin, looks up (used while the question is open)
+
+Usage:  avatar3d.render("correct", say="Well done!", key="av")
+No extra Python packages. Respects prefers-reduced-motion. Needs internet for the three.js CDN;
+if it fails to load, the component quietly shows an emoji instead.
+"""
+import html
+import json
+
+import streamlit.components.v1 as components
+
+_THREE = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+
+_TEMPLATE = """
+<!doctype html><html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif}
+  #wrap{position:relative;width:100%;height:100%}
+  canvas{display:block;width:100%;height:100%;outline:none}
+  #say{position:absolute;right:6px;top:10px;max-width:58%;padding:10px 14px;border-radius:16px 16px 16px 4px;
+       background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#E8EAF6;font-size:14px;line-height:1.35;
+       backdrop-filter:blur(6px);opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s}
+  #say.on{opacity:1;transform:none}
+  #say.ok{border-color:#34D399;background:rgba(52,211,153,.14)}
+  #say.no{border-color:#FB7185;background:rgba(251,113,133,.14)}
+  #fallback{display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:64px}
+</style></head><body>
+<div id="wrap"><canvas id="c"></canvas><div id="say"></div><div id="fallback">__EMOJI__</div></div>
+<script src="__THREE__"></script>
+<script>
+(function(){
+  var MOOD = __MOOD__, SAY = __SAY__;
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var say = document.getElementById('say');
+  if (SAY){ say.textContent = SAY; say.className = (MOOD==='correct'?'ok':MOOD==='wrong'?'no':''); setTimeout(function(){say.classList.add('on');},250); }
+  if (!window.THREE){ document.getElementById('fallback').style.display='flex'; return; }
+
+  var cv = document.getElementById('c');
+  var R = new THREE.WebGLRenderer({canvas:cv, antialias:true, alpha:true});
+  R.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  var S = new THREE.Scene();
+  var cam = new THREE.PerspectiveCamera(32, 1, .1, 50);
+  cam.position.set(0, 1.55, 6.2); cam.lookAt(0, 1.45, 0);
+
+  S.add(new THREE.HemisphereLight(0xcfd8ff, 0x1a1440, .85));
+  var key = new THREE.DirectionalLight(0xffffff, .9); key.position.set(2.5, 4, 4); S.add(key);
+  var rim = new THREE.DirectionalLight(0x22D3EE, .7); rim.position.set(-3, 2, -2); S.add(rim);
+
+  function mat(c, r){ return new THREE.MeshStandardMaterial({color:c, roughness:r==null?.7:r, metalness:.05}); }
+  var SKIN = mat(0xE8B48F, .6), HAIR = mat(0x2A2235, .5), HOOD = mat(0x7C5CFF, .75), HOOD2 = mat(0x5A3FE0, .75),
+      PANT = mat(0x1B2447, .8), WHITE = mat(0xffffff, .3), DARK = mat(0x15121f, .4);
+
+  function add(parent, geo, m, x, y, z){ var o = new THREE.Mesh(geo, m); o.position.set(x||0, y||0, z||0); parent.add(o); return o; }
+
+  var root = new THREE.Group(); S.add(root);
+
+  // torso + shoulders
+  var torso = add(root, new THREE.CylinderGeometry(.62, .52, 1.25, 28), HOOD, 0, .95, 0);
+  add(root, new THREE.SphereGeometry(.64, 28, 16, 0, Math.PI*2, 0, Math.PI/2), HOOD, 0, 1.55, 0).scale.set(1, .42, .62);
+  torso.scale.z = .66;
+  add(root, new THREE.CylinderGeometry(.5, .5, .32, 24), PANT, 0, .22, 0).scale.z = .66;
+  var collar = add(root, new THREE.TorusGeometry(.21, .06, 12, 24), HOOD2, 0, 1.62, .02); collar.rotation.x = Math.PI/2;
+
+  // neck
+  add(root, new THREE.CylinderGeometry(.13, .15, .26, 16), SKIN, 0, 1.72, 0);
+
+  // head group
+  var head = new THREE.Group(); head.position.set(0, 2.08, 0); root.add(head);
+  var skull = add(head, new THREE.SphereGeometry(.46, 36, 28), SKIN, 0, 0, 0); skull.scale.set(.95, 1.06, .98);
+  var hair = add(head, new THREE.SphereGeometry(.485, 36, 24, 0, Math.PI*2, 0, Math.PI*.56), HAIR, 0, .03, -.02); hair.scale.set(.98, 1.06, 1.02);
+  add(head, new THREE.SphereGeometry(.2, 20, 14), HAIR, .1, .4, .16).scale.set(1.5, .75, .9);   // quiff
+  add(head, new THREE.SphereGeometry(.07, 12, 10), SKIN, -.46, -.02, 0).scale.set(.6, 1, .9);   // ears
+  add(head, new THREE.SphereGeometry(.07, 12, 10), SKIN,  .46, -.02, 0).scale.set(.6, 1, .9);
+  add(head, new THREE.SphereGeometry(.06, 12, 10), SKIN, 0, -.04, .45).scale.set(.9, 1, .9);   // nose
+
+  function eye(x){
+    var g = new THREE.Group(); g.position.set(x, .06, .39); head.add(g);
+    var w = add(g, new THREE.SphereGeometry(.085, 20, 16), WHITE); w.scale.set(1, 1.1, .6);
+    add(g, new THREE.SphereGeometry(.045, 16, 12), DARK, 0, 0, .04);
+    return g;
+  }
+  var eyeL = eye(-.17), eyeR = eye(.17);
+  function brow(x){ var b = add(head, new THREE.BoxGeometry(.16, .03, .03), HAIR, x, .22, .41); return b; }
+  var browL = brow(-.17), browR = brow(.17);
+
+  var mouthMat = new THREE.MeshStandardMaterial({color:0x6b2330, roughness:.5, side:THREE.DoubleSide});
+  var mouth = add(head, new THREE.TorusGeometry(.13, .022, 8, 28, Math.PI), mouthMat, 0, -.2, .4);
+  add(head, new THREE.SphereGeometry(.05, 12, 10), mat(0xF29A8F, .8), -.27, -.1, .35).scale.set(1.2, .7, .4);  // cheeks
+  add(head, new THREE.SphereGeometry(.05, 12, 10), mat(0xF29A8F, .8),  .27, -.1, .35).scale.set(1.2, .7, .4);
+
+  // arms: shoulder pivot -> upper arm -> elbow pivot -> forearm + hand
+  function arm(side){
+    var sh = new THREE.Group(); sh.position.set(side*.74, 1.5, 0); root.add(sh);
+    add(sh, new THREE.SphereGeometry(.17, 16, 12), HOOD);
+    var up = add(sh, new THREE.CylinderGeometry(.14, .12, .62, 16), HOOD, 0, -.31, 0);
+    var el = new THREE.Group(); el.position.set(0, -.62, 0); sh.add(el);
+    add(el, new THREE.SphereGeometry(.12, 14, 10), HOOD2);
+    add(el, new THREE.CylinderGeometry(.11, .09, .55, 16), HOOD2, 0, -.27, 0);
+    add(el, new THREE.SphereGeometry(.11, 16, 12), SKIN, 0, -.6, 0);
+    return {sh: sh, el: el};
+  }
+  var aL = arm(-1), aR = arm(1);
+
+  // soft floor glow
+  var disc = new THREE.Mesh(new THREE.CircleGeometry(1.25, 40), new THREE.MeshBasicMaterial({color:0x7C5CFF, transparent:true, opacity:.18}));
+  disc.rotation.x = -Math.PI/2; disc.position.y = -.02; S.add(disc);
+
+  // pointer → head look
+  var look = {x:0, y:0}, tgt = {x:0, y:0};
+  function ptr(e){
+    var r = cv.getBoundingClientRect(), p = e.touches ? e.touches[0] : e;
+    tgt.x = Math.max(-1, Math.min(1, ((p.clientX - r.left) / r.width  - .5) * 2));
+    tgt.y = Math.max(-1, Math.min(1, ((p.clientY - r.top)  / r.height - .5) * 2));
+  }
+  window.addEventListener('pointermove', ptr, {passive:true});
+  window.addEventListener('touchmove', ptr, {passive:true});
+
+  function resize(){
+    var w = cv.clientWidth || 300, h = cv.clientHeight || 190;
+    R.setSize(w, h, false); cam.aspect = w / h;
+    // shift the character left so the speech bubble has room
+    cam.setViewOffset(w, h, SAY ? w * .16 : 0, 0, w, h);
+    cam.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize); resize();
+
+  function ease(t){ return t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2; }
+  function lerp(a, b, k){ return a + (b - a) * k; }
+
+  var clock = new THREE.Clock(), nextBlink = 1.5, blink = 0;
+  var st = {mouth:0, brow:0, lArmX:0, lArmZ:.12, rArmX:0, rArmZ:-.12, lEl:.15, rEl:.15, hy:0, hx:0, hz:0, jump:0};
+
+  function targetPose(t){
+    var p = {mouth:.05, brow:0, lArmX:0, lArmZ:.12, rArmX:0, rArmZ:-.12, lEl:.2, rEl:.2, hy:0, hx:0, hz:0, jump:0};
+    var m = reduce ? 'idle' : MOOD;
+    if (MOOD === 'correct'){
+      p.mouth = -1; p.brow = .6;
+      if (reduce){ p.mouth = -1; return p; }
+      var k = Math.min(t / .5, 1);
+      p.lArmZ = lerp(.12, 2.55, ease(k)); p.rArmZ = lerp(-.12, -2.55, ease(k));
+      p.lEl = p.rEl = lerp(.2, .35, k);
+      p.lArmZ += Math.sin(t * 9) * .12 * k; p.rArmZ -= Math.sin(t * 9) * .12 * k;
+      p.jump = Math.max(0, Math.sin(t * 7)) * .16 * (t < 3.2 ? 1 : 0);
+      p.hx = -.12 * k; p.hz = Math.sin(t * 6) * .05;
+    } else if (MOOD === 'wrong'){
+      p.mouth = .75; p.brow = -.7;
+      if (reduce) return p;
+      var s = Math.min(t / .4, 1);
+      p.lArmZ = lerp(.12, .55, s); p.rArmZ = lerp(-.12, -.55, s);
+      p.lEl = p.rEl = lerp(.2, 1.1, s);
+      p.lArmX = p.rArmX = lerp(0, -.5, s);
+      p.hy = t < 1.6 ? Math.sin(t * 11) * .38 * Math.max(0, 1 - t / 1.6) : 0;
+      p.hx = .16 * s;
+    } else if (MOOD === 'think'){
+      p.mouth = -.05; p.brow = .25;
+      p.rArmZ = -.25; p.rArmX = lerp(0, -1.25, ease(Math.min(t / .7, 1)));
+      p.rEl = lerp(.2, 2.1, ease(Math.min(t / .7, 1)));
+      p.hz = .08; p.hy = -.25; p.hx = -.08;
+    } else {
+      p.mouth = -.25;
+    }
+    return p;
+  }
+
+  var up = new THREE.Vector3();
+  function tick(){
+    requestAnimationFrame(tick);
+    var dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
+    var P = targetPose(t), k = 1 - Math.pow(.0006, dt);
+    for (var n in P) st[n] = lerp(st[n], P[n], k);
+
+    look.x = lerp(look.x, tgt.x, .08); look.y = lerp(look.y, tgt.y, .08);
+    var breathe = reduce ? 0 : Math.sin(t * 1.8) * .012;
+
+    root.position.y = st.jump;
+    root.scale.y = 1 + breathe;
+    head.rotation.y = st.hy + look.x * .45;
+    head.rotation.x = st.hx + look.y * .25;
+    head.rotation.z = st.hz;
+    root.rotation.y = look.x * .12 + (reduce ? 0 : Math.sin(t * .6) * .04);
+
+    aL.sh.rotation.z = st.lArmZ; aL.sh.rotation.x = st.lArmX; aL.el.rotation.z = -st.lEl * .3; aL.el.rotation.x = -st.lEl * .6;
+    aR.sh.rotation.z = st.rArmZ; aR.sh.rotation.x = st.rArmX; aR.el.rotation.z =  st.rEl * .3; aR.el.rotation.x = -st.rEl * .6;
+
+    mouth.scale.y = -st.mouth;            // negative = smile (∪), positive = frown (∩)
+    mouth.position.y = -.2 + (st.mouth < 0 ? .03 : -.02);
+    browL.rotation.z =  st.brow * .35; browR.rotation.z = -st.brow * .35;
+    browL.position.y = browR.position.y = .22 + Math.max(0, st.brow) * .03;
+
+    if (!reduce){
+      nextBlink -= dt;
+      if (nextBlink < 0){ blink = .14; nextBlink = 2 + Math.random() * 3; }
+      blink = Math.max(0, blink - dt);
+    }
+    var sy = blink > 0 ? .08 : 1; eyeL.scale.y = eyeR.scale.y = sy;
+    R.render(S, cam);
+  }
+  tick();
+})();
+</script></body></html>
+"""
+
+
+def render(mood="idle", say="", height=190, nonce=None):
+    """mood: idle | correct | wrong | think.  `say` is the speech-bubble text (already translated)."""
+    mood = mood if mood in ("idle", "correct", "wrong", "think") else "idle"
+    emoji = {"correct": "🎉", "wrong": "🤗", "think": "🤔"}.get(mood, "🧑‍🏫")
+    code = (
+        _TEMPLATE.replace("__THREE__", _THREE)
+        .replace("__MOOD__", json.dumps(mood))
+        .replace("__SAY__", json.dumps(say or ""))
+        .replace("__EMOJI__", html.escape(emoji))
+    )
+    if nonce is not None:  # a changing comment forces a fresh iframe → animation replays
+        code += f"<!-- {html.escape(str(nonce))} -->"
+    components.html(code, height=height)
